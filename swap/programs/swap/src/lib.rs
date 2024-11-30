@@ -37,12 +37,14 @@ pub mod swap {
     // Maker Functions
     pub fn create_offer_and_send_tokens_to_vault(
         ctx: Context<CreateOffer>,
+        id: u64,
         token_mint: Pubkey,
         token_amount: u64,
         expected_total_amount: u64,
         deadline: i64,
+        bump: u8,
     ) -> Result<()> {
-        ctx.accounts.process(token_mint, token_amount, expected_total_amount, deadline)
+        ctx.accounts.process(id,token_mint, token_amount, expected_total_amount, deadline, bump)
     }
 
     pub fn add_taker_whitelist(
