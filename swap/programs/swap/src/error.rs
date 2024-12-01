@@ -16,4 +16,8 @@ pub enum SwapError {
     MintNotWhitelisted,
     #[msg("Invalid Admin")]
     InvalidAdmin,
+    #[msg("Offer has expired")]
+    OfferExpired,
+    #[msg("Insufficient amount available")]
+    InsufficientAmount,
 }

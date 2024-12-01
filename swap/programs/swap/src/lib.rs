@@ -64,4 +64,13 @@ pub mod swap {
     pub fn cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
         ctx.accounts.process()
     }
+
+    // Taker Function
+    pub fn take_offer(
+        ctx: Context<TakeOffer>, 
+        token_amount: u64,
+        vault_authority_bump: u8
+    ) -> Result<()> {
+        ctx.accounts.process(token_amount, vault_authority_bump)
+    }
 }
