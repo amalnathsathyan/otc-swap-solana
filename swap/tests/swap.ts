@@ -16,6 +16,10 @@ describe("swap program - create offer", () => {
   const taker = Keypair.generate()
   const mint_a = Keypair.generate();
   const mint_b = Keypair.generate();
+  let adminConfig:PublicKey;
+  let feeConfig:PublicKey;
+  let whitelistConfig:PublicKey;
+  let mintWhitelist:PublicKey;
   
   before(async () => {
     try {
@@ -96,13 +100,16 @@ describe("swap program - create offer", () => {
         admin.publicKey,
         admin.publicKey,
         9,
+        mint_b,
+        {commitment:'confirmed'},
+        TOKEN_PROGRAM_ID
       )
       console.log("OutputMint:", outputMint.toBase58())
 
       const outputMintTakerATA = await getOrCreateAssociatedTokenAccount(
         connection,
         taker,
-        inputMint,
+        outputMint,
         taker.publicKey,
         false,
         'confirmed',
@@ -131,10 +138,42 @@ describe("swap program - create offer", () => {
   });
 
   it("initialize admin", async () => {
+
+      adminConfig = PublicKey.findProgramAddressSync(
+        [Buffer.from('admin_config')],
+        program.programId
+      )[0];
+
+      feeConfig = PublicKey.findProgramAddressSync(
+        [Buffer.from('fee')],
+        program.programId
+      )[0];
+
+      whitelistConfig = PublicKey.findProgramAddressSync(
+        [Buffer.from('whitelist_config')],
+        program.programId
+      )[0];
+
+      mintWhitelist = PublicKey.findProgramAddressSync(
+        [Buffer.from('mint_whitelist')],
+        program.programId
+      )[0];
+
       program.methods.initializeAdmin(
         new anchor.BN('200'),
-
-      )
+        new PublicKey('2vBAnVajtqmP4RBm8Vw5gzYEy3XCT9Mf1NBeQ2TPkiVF'),
+        false,
+        [mint_a.publicKey,mint_b.publicKey]
+      ).accounts({
+        admin: admin.publicKey,
+        adminConfig:adminConfig,
+        feeConfig:feeConfig,
+        whitelistConfig:whitelistConfig,
+        mintWhitelist:mintWhitelist,
+        systemProgram: SystemProgram.programId
+      }
+      ).signers(
+        [admin]
+      ).rpc()
   });
-  it("takes offer")
 });
