@@ -21,8 +21,7 @@ pub struct CancelOffer<'info> {
         constraint = offer.status == OfferStatus::Ongoing @ SwapError::InvalidOfferStatus,
         seeds = [
             b"offer",
-            maker.key().as_ref(),
-            offer.offer_id.to_le_bytes().as_ref()
+            maker.key().as_ref()
         ],
         bump,
         close = maker

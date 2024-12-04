@@ -29,8 +29,7 @@ pub struct TakeOffer<'info> {
         constraint = offer.status == OfferStatus::Ongoing @ SwapError::InvalidOfferStatus,
         seeds = [
             b"offer",
-            offer.maker.as_ref(),
-            offer.offer_id.to_le_bytes().as_ref()
+            offer.maker.as_ref()
         ],
         bump,
         close = maker

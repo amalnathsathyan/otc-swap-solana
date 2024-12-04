@@ -18,11 +18,10 @@ pub struct CreateOffer<'info> {
     #[account(
         init,
         payer = maker,
-        space = 8 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 32 + 1,
+        space = 8 + 32 + 32 + 32 + 8 + 32 + 8 + 8 + 1 + 8 + 32 ,
         seeds = [
             b"offer",
-            maker.key().as_ref(),
-            offer_id.to_le_bytes().as_ref()
+            maker.key().as_ref()
         ],
         bump
     )]
@@ -102,7 +101,6 @@ pub struct CreateOffer<'info> {
 /// 4. Transfers tokens from maker to vault
 pub fn create_offer(
     ctx: Context<CreateOffer>,
-    id: u64,
     input_token_mint: Pubkey,
     output_token_mint: Pubkey,
     token_amount: u64,
@@ -111,8 +109,9 @@ pub fn create_offer(
     fee_percentage: u64,
     fee_wallet: Pubkey,
 ) -> Result<()> {
+    let offer_key = ctx.accounts.offer.key();
     let offer = &mut ctx.accounts.offer;
-    offer.offer_id = id;
+    offer.offer_id = offer_key;
     offer.maker = ctx.accounts.maker.key();
     offer.input_token_mint = input_token_mint;
     offer.output_token_mint = output_token_mint;

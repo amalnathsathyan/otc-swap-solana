@@ -6,7 +6,7 @@ use anchor_lang::prelude::*;
 pub struct Offer {
     /// Unique identifier for the offer
     /// Set by the maker when creating the offer
-    pub offer_id: u64,
+    pub offer_id: Pubkey,
 
     /// The public key of the account that created this offer
     /// Controls permissions for offer modification and cancellation
