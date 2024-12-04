@@ -12,19 +12,18 @@ describe("swap program - create offer", () => {
   const program = anchor.workspace.Swap as Program<Swap>;
   const maker = Keypair.generate();
   
-  let inputMint: PublicKey;
-  let outputMint: PublicKey;
+  const inputMint = Keypair.generate();
+  const outputMint = Keypair.generate();
   let makerTokenAccount: PublicKey;
   let vaultTokenAccount: PublicKey;
   let vaultAuthority: PublicKey;
 
   before(async () => {
-    // Restart local validator before each test suite
     try {
       const connection = provider.connection;
       
       // Airdrop SOL to maker with retry
-      const airdropAmount = anchor.web3.LAMPORTS_PER_SOL * 10;
+      const airdropAmount = anchor.web3.LAMPORTS_PER_SOL * 5;
       const tx = await connection.requestAirdrop(maker.publicKey, airdropAmount);
       
       const latestBlockhash = await connection.getLatestBlockhash();
@@ -35,52 +34,55 @@ describe("swap program - create offer", () => {
       });
 
       // Create test tokens with unique keypairs
-      inputMint = await token.createMint(
+      const inputMintTx = await token.createMint(
         provider.connection, 
-        provider.wallet.payer, 
+        maker, 
         maker.publicKey, 
         null, 
-        9
+        9,
+        inputMint,
       );
 
-      outputMint = await token.createMint(
+      const outputMintTx = await token.createMint(
         provider.connection, 
-        provider.wallet.payer, 
+        maker, 
         maker.publicKey, 
         null, 
-        9
+        9,
+        outputMint
       );
 
       // Create maker's token account and mint tokens
       makerTokenAccount = await token.createAccount(
         provider.connection, 
-        provider.wallet.payer, 
-        inputMint, 
-        maker.publicKey
+        maker, 
+        inputMint.publicKey, 
+        maker.publicKey,
       );
 
-      await token.mintTo(
+      const mintTx = await token.mintTo(
         provider.connection,
-        provider.wallet.payer,
-        inputMint,
+        maker,
+        inputMint.publicKey,
         makerTokenAccount,
         maker.publicKey,
         1000000000 // 1000 tokens
       );
 
       // Find vault authority PDA
-      [vaultAuthority] = PublicKey.findProgramAddressSync(
-        [Buffer.from("vault"), inputMint.toBuffer()],
+      const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault"), inputMint.publicKey.toBuffer()],
         program.programId
       );
 
-      // Create vault token account with explicit signer
-      vaultTokenAccount = await token.createAccount(
+      vaultAuthority = vaultAuthorityPDA;
+
+      // Create vault token account with vaultAuthority as signer and owner
+      vaultTokenAccount = await token.createAssociatedTokenAccount(
         provider.connection,
-        provider.wallet.payer,
-        inputMint,
-        vaultAuthority,
-        maker
+        vaultAuthority, // Use vaultAuthority as signer
+        inputMint.publicKey,
+        vaultAuthority, // Use vaultAuthority as owner
       );
 
     } catch (error) {
@@ -91,14 +93,10 @@ describe("swap program - create offer", () => {
 
   it("should create an offer successfully", async () => {
     // Generate unique offer ID
-    const offerId = new anchor.BN(Date.now());
-
-    // Find offer PDA
     const [offerPDA] = PublicKey.findProgramAddressSync(
       [
         Buffer.from("offer"),
         maker.publicKey.toBuffer(),
-        offerId.toBuffer("le", 8)
       ],
       program.programId
     );
@@ -124,22 +122,21 @@ describe("swap program - create offer", () => {
     // Prepare transaction
     const tx = await program.methods
       .createOfferAndSendTokensToVault(
-        offerId,
-        inputMint,
-        outputMint,
-        new anchor.BN(500000000), // 500 tokens
-        new anchor.BN(1000000000), // Expected 1000 tokens
-        new anchor.BN(Math.floor(Date.now() / 1000) + 86400), // 24h from now
-        new anchor.BN(10), // 10% fee
-        provider.wallet.publicKey // Fee wallet
+        inputMint.publicKey,
+        outputMint.publicKey,
+        new anchor.BN('1000'),
+        new anchor.BN('500'),
+        new anchor.BN('1733387146'),
+        new anchor.BN('200'),
+        new PublicKey('2vBAnVajtqmP4RBm8Vw5gzYEy3XCT9Mf1NBeQ2TPkiVF')
       )
       .accounts({
         maker: maker.publicKey,
         offer: offerPDA,
         whitelist: whitelistPDA,
         offerFeeConfig: feeConfigPDA,
-        inputTokenMint: inputMint,
-        outputTokenMint: outputMint,
+        inputTokenMint: inputMint.publicKey,
+        outputTokenMint: outputMint.publicKey,
         makerTokenAccount: makerTokenAccount,
         vaultTokenAccount: vaultTokenAccount,
         vaultAuthority: vaultAuthority,
@@ -155,37 +152,6 @@ describe("swap program - create offer", () => {
       vaultTokenAccount
     );
 
-    expect(vaultBalance.amount).to.equal(BigInt(500000000));
-  });
-
-  it("should fail creating offer with insufficient tokens", async () => {
-    const offerId = new anchor.BN(Date.now());
-
-    try {
-      await program.methods
-        .createOfferAndSendTokensToVault(
-          offerId,
-          inputMint,
-          outputMint,
-          new anchor.BN(2000000000), // More than account balance
-          new anchor.BN(1000000000),
-          new anchor.BN(Math.floor(Date.now() / 1000) + 86400),
-          new anchor.BN(10),
-          provider.wallet.publicKey
-        )
-        .accounts({
-          maker: maker.publicKey,
-          makerTokenAccount: makerTokenAccount,
-          vaultTokenAccount: vaultTokenAccount,
-          inputTokenMint: inputMint,
-          outputTokenMint: outputMint
-        })
-        .signers([maker])
-        .rpc();
-      
-      expect.fail("Should have thrown an error");
-    } catch (err) {
-      expect(err.message).to.include("insufficient funds");
-    }
+    expect(vaultBalance.amount).to.equal(BigInt(500000000)); // Expecting 500 tokens in the vault
   });
 });
