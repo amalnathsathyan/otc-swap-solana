@@ -65,6 +65,8 @@ impl AdminConfig {
                 OfferStatus::Completed => self.completed_offers -= 1,
                 OfferStatus::Cancelled => self.cancelled_offers -= 1,
                 OfferStatus::Expired => self.expired_offers -= 1,
+                // These states don't affect counters
+                OfferStatus::Initialized | OfferStatus::VaultInitialized => ()
             }
         }
         match new_status {
@@ -72,6 +74,8 @@ impl AdminConfig {
             OfferStatus::Completed => self.completed_offers += 1,
             OfferStatus::Cancelled => self.cancelled_offers += 1,
             OfferStatus::Expired => self.expired_offers += 1,
+            // These states don't affect counters
+            OfferStatus::Initialized | OfferStatus::VaultInitialized => ()
         }
     }
 }

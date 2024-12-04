@@ -71,23 +71,22 @@ pub mod swap {
         token_amount: u64,
         expected_total_amount: u64,
         deadline: i64,
-        initial_takers: Vec<Pubkey>
     ) -> Result<()> {
-        instructions::create_offer::create_offer(ctx, token_amount, expected_total_amount, deadline,initial_takers)
+        instructions::create_offer::create_offer(ctx, token_amount, expected_total_amount, deadline)
     }
 
     pub fn add_taker_whitelist(
-        ctx: Context<UpdateWhitelist>,
-        taker: Vec<Pubkey>,
+        ctx: Context<ManageWhitelist>,
+        takers: Vec<Pubkey>,
     ) -> Result<()> {
-        instructions::update_taker_whitelist::add_takers(ctx, taker)
+        instructions::create_offer::add_takers(ctx, takers)
     }
 
     pub fn remove_taker_whitelist(
-        ctx: Context<UpdateWhitelist>,
-        taker: Vec<Pubkey>,
+        ctx: Context<ManageWhitelist>,
+        takers: Vec<Pubkey>,
     ) -> Result<()> {
-        instructions::update_taker_whitelist::remove_takers(ctx, taker)
+        instructions::create_offer::remove_takers(ctx, takers)
     }
 
     pub fn cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {

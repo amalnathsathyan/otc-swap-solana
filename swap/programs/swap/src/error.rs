@@ -42,4 +42,10 @@ pub enum SwapError {
     InvalidTokenMint,
     #[msg("Deadline must be in the future")]
     InvalidDeadline,
+    #[msg("Whitelist is full")]
+    WhitelistFull,
+    #[msg("Takers list cannot be empty")]
+    EmptyTakersList,
+    #[msg("Token amount must be greater than 0")]
+    InvalidAmount,
 }

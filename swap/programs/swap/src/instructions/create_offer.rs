@@ -6,23 +6,24 @@ use anchor_spl::{
 use crate::state::*;
 use crate::error::*;
 
-/// Account structure for creating and managing token swap offers
-/// Creates a unique vault for each offer using ATA
+/// Account structure for creating offer and setting up vault in one instruction
+/// Combines offer initialization and token transfer for efficiency
 #[derive(Accounts)]
 pub struct CreateOffer<'info> {
-    /// The offer creator (maker) who will deposit tokens
-    /// Pays for all account initializations
+    /// The offer creator who will:
+    /// - Pay for account initialization
+    /// - Provide tokens for the trade
+    /// - Control offer parameters
     #[account(mut)]
     pub maker: Signer<'info>,
 
-    /// PDA storing offer details
+    /// The offer PDA storing all trade details
     /// Space breakdown:
     /// - 8 bytes discriminator
-    /// - 32 bytes offer_id
     /// - 32 bytes maker pubkey
     /// - 32 bytes input token mint
-    /// - 8 bytes token amount
     /// - 32 bytes output token mint
+    /// - 8 bytes token amount
     /// - 8 bytes expected amount
     /// - 8 bytes deadline
     /// - 32 bytes fee wallet
@@ -36,23 +37,7 @@ pub struct CreateOffer<'info> {
     )]
     pub offer: Account<'info, Offer>,
 
-    /// PDA storing allowed taker addresses
-    /// Space breakdown:
-    /// - 8 bytes discriminator
-    /// - 32 bytes offer pubkey
-    /// - 32 bytes maker pubkey
-    /// - 4 bytes vec length
-    /// - 32 * 50 bytes for taker pubkeys (max 50 takers)
-    #[account(
-        init,
-        payer = maker,
-        space = 8 + 32 + 32 + 4 + (32 * 50),
-        seeds = [b"whitelist", maker.key().as_ref()],
-        bump
-    )]
-    pub whitelist: Account<'info, Whitelist>,
-
-    /// Admin configuration PDA for protocol statistics and verification
+    /// Admin configuration for protocol verification and statistics
     /// Must be initialized before any offers can be created
     #[account(
         mut,
@@ -62,8 +47,8 @@ pub struct CreateOffer<'info> {
     )]
     pub admin_config: Account<'info, AdminConfig>,
 
-    /// Global fee configuration PDA
-    /// Provides fee parameters that will be copied to the offer
+    /// Fee configuration providing protocol fee parameters
+    /// Must be initialized before any offers can be created
     #[account(
         seeds = [b"fee_config"],
         bump,
@@ -71,8 +56,8 @@ pub struct CreateOffer<'info> {
     )]
     pub fee_config: Account<'info, FeeConfig>,
 
-    /// Token account owned by maker containing input tokens
-    /// Must match the input token mint and be owned by maker
+    /// Maker's token account containing tokens to be offered
+    /// Must match the input token mint
     #[account(
         mut,
         constraint = maker_token_account.owner == maker.key() @ SwapError::InvalidTokenAccount,
@@ -80,9 +65,9 @@ pub struct CreateOffer<'info> {
     )]
     pub maker_token_account: InterfaceAccount<'info, TokenAccount>,
     
-    /// Protocol vault specific to this offer
-    /// Initialized as an Associated Token Account with offer PDA as authority
-    /// Will hold the tokens until the offer is taken or cancelled
+    /// Vault token account created as an Associated Token Account
+    /// Will hold the offered tokens until trade completion
+    /// Authority is the offer PDA
     #[account(
         init,
         payer = maker,
@@ -92,96 +77,96 @@ pub struct CreateOffer<'info> {
     )]
     pub vault_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// The mint of the token being offered
-    /// Used to validate token accounts and create vault
+    /// Input token mint (token being offered)
     pub input_token_mint: InterfaceAccount<'info, Mint>,
 
-    /// The mint of the token being requested
-    /// Will be used by takers to fulfill the offer
+    /// Output token mint (token being requested)
     pub output_token_mint: InterfaceAccount<'info, Mint>,
 
-    /// Token program interface supporting both SPL Token and Token-2022
+    /// Token interface program for Token-2022 support
     pub token_program: Interface<'info, TokenInterface>,
-    
-    /// Required for initializing the vault ATA
+
+    /// Required for ATA initialization
     pub associated_token_program: Program<'info, AssociatedToken>,
-    
+
     pub system_program: Program<'info, System>,
 }
 
-/// Creates a new token swap offer with specified parameters
-/// Initializes a unique vault for the offered tokens
-///
+/// Account structure for managing offer whitelist
+/// Handles both creation and updates to whitelist
+#[derive(Accounts)]
+pub struct ManageWhitelist<'info> {
+    /// Original offer maker, must sign whitelist operations
+    #[account(mut)]
+    pub maker: Signer<'info>,
+
+    /// The whitelist PDA storing allowed takers
+    /// Created on first use with init_if_needed
+    /// Space for up to 50 taker addresses
+    #[account(
+        init_if_needed,
+        payer = maker,
+        space = 8 + 32 + 32 + 4 + (32 * 50),
+        seeds = [b"whitelist", maker.key().as_ref()],
+        bump,
+        constraint = offer.maker == maker.key() @ SwapError::UnauthorizedMaker
+    )]
+    pub whitelist: Account<'info, Whitelist>,
+
+    /// The offer this whitelist belongs to
+    /// Used to verify maker authority
+    pub offer: Account<'info, Offer>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Creates a new offer and sets up its vault
+/// Handles both offer initialization and token transfer in one transaction
+/// 
 /// # Arguments
-/// * `ctx` - CreateOffer context containing required accounts
-/// * `offer_id` - Unique identifier for this offer
-/// * `token_amount` - Amount of input tokens being offered
-/// * `expected_total_amount` - Amount of output tokens expected in return
+/// * `ctx` - CreateOffer context containing all required accounts
+/// * `token_amount` - Amount of input tokens to offer
+/// * `expected_amount` - Amount of output tokens expected in return
 /// * `deadline` - Unix timestamp when offer expires
-/// * `initial_takers` - Vector of addresses initially allowed to take offer
 ///
-/// # Flow
-/// 1. Validates offer parameters and accounts
-/// 2. Initializes offer PDA with input parameters
-/// 3. Sets up taker whitelist
-/// 4. Updates protocol statistics 
-/// 5. Creates offer-specific vault as ATA
-/// 6. Transfers tokens from maker to vault
-///
-/// # Security
-/// - Verifies admin initialization
-/// - Validates token account ownership
-/// - Ensures matching token mints
-/// - Uses PDA derivation for security
-/// - Creates unique vault per offer
-/// - Uses Associated Token Program for deterministic addresses
+/// # Steps
+/// 1. Validate all input parameters
+/// 2. Initialize offer PDA with trade details
+/// 3. Create vault and transfer tokens
+/// 4. Apply protocol configuration
+/// 5. Update admin statistics
 ///
 /// # Errors
 /// * `SwapError::InvalidDeadline` - If deadline is in the past
-/// * `SwapError::AdminNotInitialized` - If admin config not set up
-/// * `SwapError::FeeConfigNotInitialized` - If fee config not set up
+/// * `SwapError::InvalidAmount` - If token amount is zero
+/// * `SwapError::AdminNotInitialized` - If admin config not set
+/// * `SwapError::FeeConfigNotInitialized` - If fee config not set
 /// * `SwapError::InvalidTokenAccount` - If token accounts don't match
-/// * `SwapError::InvalidTokenMint` - If token mints don't match
 pub fn create_offer(
     ctx: Context<CreateOffer>,
     token_amount: u64,
-    expected_total_amount: u64,
+    expected_amount: u64,
     deadline: i64,
-    initial_takers: Vec<Pubkey>,
 ) -> Result<()> {
-
-    let offer_key = ctx.accounts.offer.key();
-    // Verify deadline is in the future
+    // Validate all inputs
     let current_time = Clock::get()?.unix_timestamp;
     require!(deadline > current_time, SwapError::InvalidDeadline);
+    require!(token_amount > 0, SwapError::InvalidAmount);
 
-    // Initialize offer account
+    // Initialize offer parameters
     let offer = &mut ctx.accounts.offer;
-    offer.offer_id = offer_key;
     offer.maker = ctx.accounts.maker.key();
     offer.input_token_mint = ctx.accounts.input_token_mint.key();
     offer.output_token_mint = ctx.accounts.output_token_mint.key();
     offer.token_amount = token_amount;
-    offer.expected_total_amount = expected_total_amount;
+    offer.expected_total_amount = expected_amount;
     offer.deadline = deadline;
-    offer.status = OfferStatus::Ongoing;
     
-    // Copy global fee configuration to offer
+    // Copy protocol configuration
     offer.fee_percentage = ctx.accounts.fee_config.fee_percentage;
     offer.fee_wallet = ctx.accounts.fee_config.fee_address;
 
-    // Set up taker whitelist
-    let whitelist = &mut ctx.accounts.whitelist;
-    whitelist.offer = offer_key;
-    whitelist.maker = ctx.accounts.maker.key();
-    whitelist.takers = initial_takers;
-
-    // Update protocol statistics
-    let admin_config = &mut ctx.accounts.admin_config;
-    admin_config.total_offers += 1;
-    admin_config.active_offers += 1;
-
-    // Transfer tokens to offer's vault
+    // Transfer tokens to vault with amount validation
     token_interface::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -196,6 +181,72 @@ pub fn create_offer(
         ctx.accounts.input_token_mint.decimals,
     )?;
 
+    // Update protocol statistics
+    let admin_config = &mut ctx.accounts.admin_config;
+    admin_config.total_offers += 1;
+    admin_config.active_offers += 1;
+
+    // Activate the offer
+    offer.status = OfferStatus::Ongoing;
+
     Ok(())
 }
 
+/// Adds multiple takers to an offer's whitelist
+/// Creates whitelist PDA if it doesn't exist
+/// 
+/// # Arguments
+/// * `ctx` - ManageWhitelist context
+/// * `takers` - Vector of taker public keys to add
+///
+/// # Security
+/// - Only callable by offer maker
+/// - Prevents duplicate entries
+/// - Enforces maximum whitelist size
+///
+/// # Errors
+/// * `SwapError::EmptyTakersList` - If takers list is empty
+/// * `SwapError::WhitelistFull` - If adding would exceed capacity
+/// * `SwapError::UnauthorizedMaker` - If caller isn't offer maker
+pub fn add_takers(
+    ctx: Context<ManageWhitelist>,
+    takers: Vec<Pubkey>,
+) -> Result<()> {
+    require!(!takers.is_empty(), SwapError::EmptyTakersList);
+    
+    let whitelist = &mut ctx.accounts.whitelist;
+    for taker in takers {
+        if !whitelist.takers.contains(&taker) {
+            require!(
+                whitelist.takers.len() < 50,
+                SwapError::WhitelistFull
+            );
+            whitelist.takers.push(taker);
+        }
+    }
+    Ok(())
+}
+
+/// Removes multiple takers from an offer's whitelist
+/// 
+/// # Arguments
+/// * `ctx` - ManageWhitelist context
+/// * `takers` - Vector of taker public keys to remove
+///
+/// # Security
+/// - Only callable by offer maker
+/// - Safely handles non-existent entries
+/// - Maintains whitelist integrity
+///
+/// # Errors
+/// * `SwapError::EmptyTakersList` - If takers list is empty
+/// * `SwapError::UnauthorizedMaker` - If caller isn't offer maker
+pub fn remove_takers(
+    ctx: Context<ManageWhitelist>,
+    takers: Vec<Pubkey>,
+) -> Result<()> {
+    require!(!takers.is_empty(), SwapError::EmptyTakersList);
+    
+    ctx.accounts.whitelist.takers.retain(|taker| !takers.contains(taker));
+    Ok(())
+}

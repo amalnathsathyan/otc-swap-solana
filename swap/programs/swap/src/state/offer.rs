@@ -44,6 +44,12 @@ pub struct Offer {
 /// Used to track the offer's lifecycle and control permitted operations
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq)]
 pub enum OfferStatus {
+    /// Initial state after creation
+    Initialized,
+    
+    /// State after vault setup and token transfer
+    VaultInitialized,
+
     /// Offer is active and can be taken
     Ongoing,
     
