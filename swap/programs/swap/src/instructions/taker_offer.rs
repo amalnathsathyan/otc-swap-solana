@@ -1,36 +1,30 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, CloseAccount};
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    token_interface::{self, Mint, TokenAccount, TokenInterface}
+};
 use crate::state::*;
 use crate::error::*;
 
-/// TakeOffer instruction implementation
-/// Allows a whitelisted taker to accept an existing offer by:
-/// 1. Sending the requested output tokens (payment + fees)
-/// 2. Receiving the offered input tokens from the vault
-/// 3. Closes all related accounts when offer is fully taken
+/// Account structure for taking an existing offer
+/// Handles token transfers and account initialization
 #[derive(Accounts)]
 pub struct TakeOffer<'info> {
-    /// Taker (transaction signer) who will:
+    /// The taker (transaction signer) who will:
+    /// - Pay for any account initializations
     /// - Send output tokens as payment
     /// - Pay protocol fees
     /// - Receive input tokens from vault
-    /// Must be whitelisted in the offer's whitelist PDA
     #[account(mut)]
     pub taker: Signer<'info>,
     
-    /// The offer account storing all trade details
-    /// - Validates trade is still active
-    /// - Stores input/output token info
-    /// - Tracks remaining token amount
-    /// - Contains maker's address
-    /// Will be closed and rent returned to maker when fully taken
+    /// The offer PDA that also serves as vault authority
+    /// Stores all trade details and validates the transaction
+    /// Will be closed when offer is fully taken
     #[account(
         mut,
         constraint = offer.status == OfferStatus::Ongoing @ SwapError::InvalidOfferStatus,
-        seeds = [
-            b"offer",
-            offer.maker.as_ref()
-        ],
+        seeds = [b"offer", offer.maker.as_ref()],
         bump,
         close = maker
     )]
@@ -39,8 +33,7 @@ pub struct TakeOffer<'info> {
     /// Original offer maker who will:
     /// - Receive payment in output tokens
     /// - Get rent refunds from closed accounts
-    /// Validated to match the maker stored in offer
-    /// CHECK: Maker account
+    /// CHECK: Read-only maker account validated by offer PDA
     #[account(
         mut,
         constraint = maker.key() == offer.maker
@@ -48,222 +41,226 @@ pub struct TakeOffer<'info> {
     pub maker: AccountInfo<'info>,
 
     /// Whitelist PDA controlling who can take this offer
-    /// - Stores array of allowed taker addresses
-    /// - Validates taker is authorized
-    /// - Closed when offer completes (rent to maker)
-    /// PDA seeds: ["whitelist", offer pubkey]
+    /// Validates taker is authorized and closes with offer
     #[account(
         mut,
-        seeds = [
-            b"whitelist",
-            offer.key().as_ref()
-        ],
+        seeds = [b"whitelist", offer.maker.as_ref()],
         bump,
-        constraint = whitelist.offer == offer.key(),
         constraint = whitelist.takers.contains(&taker.key()) @ SwapError::TakerNotWhitelisted,
         close = maker
     )]
     pub whitelist: Account<'info, Whitelist>,
 
-    /// Offer-specific fee configuration PDA
-    /// - Stores fee percentage for this offer
-    /// - Stores fee recipient address
-    /// - Used to calculate protocol fees
-    /// - Closed when offer completes (rent to maker)
-    /// PDA seeds: ["fee_config", offer pubkey]
-    #[account(
-        mut,
-        seeds = [
-            b"fee_config",
-            offer.key().as_ref()
-        ],
-        bump,
-        close = maker
-    )]
-    pub offer_fee_config: Account<'info, FeeConfig>,
-
     /// Maker's token account to receive payment
-    /// Must be owned by maker and accept output tokens
+    /// Initialized if needed as an ATA
     #[account(
-        mut,
-        constraint = maker_receive_token_account.owner == offer.maker,
-        constraint = maker_receive_token_account.mint == offer.output_token_mint
+        init_if_needed,
+        payer = taker,
+        associated_token::mint = output_token_mint,
+        associated_token::authority = maker,
     )]
-    pub maker_receive_token_account: Account<'info, TokenAccount>,
+    pub maker_receive_token_account: InterfaceAccount<'info, TokenAccount>,
 
     /// Taker's token account to pay from
-    /// Must be owned by taker and hold output tokens
+    /// Initialized if needed as an ATA
     #[account(
-        mut,
-        constraint = taker_payment_token_account.owner == taker.key(),
-        constraint = taker_payment_token_account.mint == offer.output_token_mint
+        init_if_needed,
+        payer = taker,
+        associated_token::mint = output_token_mint,
+        associated_token::authority = taker,
     )]
-    pub taker_payment_token_account: Account<'info, TokenAccount>,
+    pub taker_payment_token_account: InterfaceAccount<'info, TokenAccount>,
 
     /// Taker's token account to receive offered tokens
-    /// Must be owned by taker and accept input tokens
+    /// Initialized if needed as an ATA
     #[account(
-        mut,
-        constraint = taker_receive_token_account.owner == taker.key(),
-        constraint = taker_receive_token_account.mint == offer.input_token_mint
+        init_if_needed,
+        payer = taker,
+        associated_token::mint = input_token_mint,
+        associated_token::authority = taker,
     )]
-    pub taker_receive_token_account: Account<'info, TokenAccount>,
+    pub taker_receive_token_account: InterfaceAccount<'info, TokenAccount>,
 
     /// Protocol fee receiving account
-    /// Must be owned by fee_address from config
-    /// Must accept output tokens
+    /// Must be owned by fee_wallet from offer
     #[account(
         mut,
-        constraint = fee_token_account.owner == offer_fee_config.fee_address,
+        constraint = fee_token_account.owner == offer.fee_wallet,
         constraint = fee_token_account.mint == offer.output_token_mint
     )]
-    pub fee_token_account: Account<'info, TokenAccount>,
+    pub fee_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// Vault holding the offered input tokens
-    /// Closed when offer fully taken (rent to maker)
+    /// Vault token account holding the offered tokens
+    /// Owned by the offer PDA
     #[account(
         mut,
+        associated_token::mint = input_token_mint,
+        associated_token::authority = offer,
         constraint = vault_token_account.mint == offer.input_token_mint
     )]
-    pub vault_token_account: Account<'info, TokenAccount>,
+    pub vault_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// PDA that controls the vault token account
-    /// Used to sign transfers from vault
-    /// PDA seeds: ["vault", input_token_mint]
-    /// CHECK: Valut authority seeds are present
-    #[account(
-        seeds = [b"vault", offer.input_token_mint.as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
+    /// Mint of the token being traded in
+    /// Used for transfers and account validation 
+    pub input_token_mint: InterfaceAccount<'info, Mint>,
 
-    /// The SPL Token program for token operations
-    pub token_program: Program<'info, Token>,
-    
-    /// The System program for PDA operations
+    /// Mint of the token being traded out
+    /// Used for transfers and account validation
+    pub output_token_mint: InterfaceAccount<'info, Mint>,
+
+    /// Token interface program for Token-2022 compatibility
+    pub token_program: Interface<'info, TokenInterface>,
+
+    /// Required for ATA initialization
+    pub associated_token_program: Program<'info, AssociatedToken>,
+
     pub system_program: Program<'info, System>,
 }
 
-    /// Process a take offer instruction
-    /// 
-    /// # Arguments
-    /// * `ctx` - Instruction context containing all account references
-    /// * `token_amount` - Amount of input tokens to take from the offer
-    ///
-    /// # Flow
-    /// 1. Validate offer expiry and available amount
-    /// 2. Calculate proportional payment and fees
-    /// 3. Transfer fees to protocol
-    /// 4. Transfer payment to maker
-    /// 5. Transfer input tokens to taker
-    /// 6. Handle account closing if offer fully taken
-    ///
-    /// # Returns
-    /// * `Result<()>` - Success or error
-    pub fn process(        
-        ctx: Context<TakeOffer>,
-        token_amount: u64,
-    ) -> Result<()> {
-        let offer = &mut ctx.accounts.offer;
+/// Takes an existing offer fully or partially
+/// 
+/// # Arguments
+/// * `ctx` - TakeOffer context containing all accounts
+/// * `token_amount` - Amount of input tokens to take from the offer
+///
+/// # Flow
+/// 1. Validates offer status and amount
+/// 2. Initializes any missing token accounts
+/// 3. Calculates proportional payment and fees
+/// 4. Transfers fees to protocol
+/// 5. Transfers payment to maker
+/// 6. Transfers input tokens from vault to taker
+/// 7. Handles account closing for full takes
+///
+/// # Security Checks
+/// - Verifies offer hasn't expired
+/// - Validates taker is whitelisted
+/// - Ensures sufficient amounts
+/// - Validates all token accounts
+/// - Uses checked math operations
+/// - Proper PDA validation
+///
+/// # Errors
+/// * `SwapError::InvalidOfferStatus` - If offer not ongoing
+/// * `SwapError::OfferExpired` - If deadline passed
+/// * `SwapError::TakerNotWhitelisted` - If taker not authorized
+/// * `SwapError::InsufficientAmount` - If amount exceeds available
+pub fn process(
+    ctx: Context<TakeOffer>,
+    token_amount: u64,
+) -> Result<()> {
+    // Get current timestamp once
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    // Store offer values we need before mutation
+    let offer_maker = ctx.accounts.offer.maker;
+    let offer_amount = ctx.accounts.offer.token_amount;
+    let offer_deadline = ctx.accounts.offer.deadline;
+    let offer_expected_amount = ctx.accounts.offer.expected_total_amount;
+    let offer_fee_percentage = ctx.accounts.offer.fee_percentage;
 
-        // Verify offer hasn't expired
-        require!(
-            Clock::get()?.unix_timestamp <= offer.deadline,
-            SwapError::OfferExpired
-        );
+    // Verify offer hasn't expired
+    require!(
+        current_time <= offer_deadline,
+        SwapError::OfferExpired
+    );
 
-        // Verify requested amount is available
-        require!(
-            token_amount <= offer.token_amount,
-            SwapError::InsufficientAmount
-        );
+    // Verify requested amount is available
+    require!(
+        token_amount <= offer_amount,
+        SwapError::InsufficientAmount
+    );
 
-        // Calculate proportional payment based on taken amount
-        // (taken_amount * total_expected) / total_amount
-        let expected_payment = (token_amount as u128)
-            .checked_mul(offer.expected_total_amount as u128)
-            .unwrap()
-            .checked_div(offer.token_amount as u128)
-            .unwrap() as u64;
+    // Calculate proportional payment based on taken amount
+    let expected_payment = (token_amount as u128)
+        .checked_mul(offer_expected_amount as u128)
+        .unwrap()
+        .checked_div(offer_amount as u128)
+        .unwrap() as u64;
 
-        // Calculate protocol fee and final payment
-        // Fee is in basis points (1/100th of a percent)
-        let fee_amount = expected_payment
-            .checked_mul(ctx.accounts.offer_fee_config.fee_percentage)
-            .unwrap()
-            .checked_div(10000)
-            .unwrap();
-        let payment_after_fee = expected_payment.checked_sub(fee_amount).unwrap();
+    // Calculate protocol fee and final payment
+    let fee_amount = expected_payment
+        .checked_mul(offer_fee_percentage)
+        .unwrap()
+        .checked_div(10000)
+        .unwrap();
+    let payment_after_fee = expected_payment.checked_sub(fee_amount).unwrap();
 
-        // Transfer protocol fee to fee wallet
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                token::Transfer {
-                    from: ctx.accounts.taker_payment_token_account.to_account_info(),
-                    to: ctx.accounts.fee_token_account.to_account_info(),
-                    authority: ctx.accounts.taker.to_account_info(),
-                },
-            ),
-            fee_amount,
-        )?;
+    // Transfer protocol fee
+    token_interface::transfer_checked(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            token_interface::TransferChecked {
+                from: ctx.accounts.taker_payment_token_account.to_account_info(),
+                mint: ctx.accounts.output_token_mint.to_account_info(),
+                to: ctx.accounts.fee_token_account.to_account_info(),
+                authority: ctx.accounts.taker.to_account_info(),
+            },
+        ),
+        fee_amount,
+        ctx.accounts.output_token_mint.decimals,
+    )?;
 
-        // Transfer payment to maker
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                token::Transfer {
-                    from: ctx.accounts.taker_payment_token_account.to_account_info(),
-                    to: ctx.accounts.maker_receive_token_account.to_account_info(),
-                    authority: ctx.accounts.taker.to_account_info(),
-                },
-            ),
-            payment_after_fee,
-        )?;
+    // Transfer payment to maker
+    token_interface::transfer_checked(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            token_interface::TransferChecked {
+                from: ctx.accounts.taker_payment_token_account.to_account_info(),
+                mint: ctx.accounts.output_token_mint.to_account_info(),
+                to: ctx.accounts.maker_receive_token_account.to_account_info(),
+                authority: ctx.accounts.taker.to_account_info(),
+            },
+        ),
+        payment_after_fee,
+        ctx.accounts.output_token_mint.decimals,
+    )?;
 
-        // Setup vault authority signing
-        let vault_auth_bump = ctx.bumps.vault_authority;
-        let seeds = &[
-            b"vault",
-            offer.input_token_mint.as_ref(),
-            &[vault_auth_bump],
-        ];
+    // Get signer seeds for vault operations
+    let offer_bump = ctx.bumps.offer;
+    let seeds = &[
+        b"offer",
+        offer_maker.as_ref(),
+        &[offer_bump],
+    ];
 
-        // Transfer input tokens from vault to taker
-        token::transfer(
+    // Transfer tokens from vault
+    token_interface::transfer_checked(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            token_interface::TransferChecked {
+                from: ctx.accounts.vault_token_account.to_account_info(),
+                mint: ctx.accounts.input_token_mint.to_account_info(),
+                to: ctx.accounts.taker_receive_token_account.to_account_info(),
+                authority: ctx.accounts.offer.to_account_info(),
+            },
+            &[seeds]
+        ),
+        token_amount,
+        ctx.accounts.input_token_mint.decimals,
+    )?;
+
+    // Handle offer completion
+    if token_amount == offer_amount {
+        // Close vault if fully taken
+        token_interface::close_account(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
-                token::Transfer {
-                    from: ctx.accounts.vault_token_account.to_account_info(),
-                    to: ctx.accounts.taker_receive_token_account.to_account_info(),
-                    authority: ctx.accounts.vault_authority.to_account_info(),
+                token_interface::CloseAccount {
+                    account: ctx.accounts.vault_token_account.to_account_info(),
+                    destination: ctx.accounts.maker.to_account_info(),
+                    authority: ctx.accounts.offer.to_account_info(),
                 },
                 &[seeds]
-            ),
-            token_amount,
+            )
         )?;
 
-        // Handle full vs partial take
-        if token_amount == offer.token_amount {
-            // Close vault token account if fully taken
-            token::close_account(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    CloseAccount {
-                        account: ctx.accounts.vault_token_account.to_account_info(),
-                        destination: ctx.accounts.maker.to_account_info(),
-                        authority: ctx.accounts.vault_authority.to_account_info(),
-                    },
-                    &[seeds]
-                )
-            )?;
-
-            // Mark as completed - triggers closing of PDAs
-            offer.status = OfferStatus::Completed;
-        } else {
-            // Update remaining amount for partial take
-            offer.token_amount = offer.token_amount.checked_sub(token_amount).unwrap();
-        }
-
-        Ok(())
+        // Mark as completed
+        ctx.accounts.offer.status = OfferStatus::Completed;
+    } else {
+        // Update remaining amount for partial takes
+        ctx.accounts.offer.token_amount = offer_amount.checked_sub(token_amount).unwrap();
     }
+
+    Ok(())
+}

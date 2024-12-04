@@ -80,7 +80,6 @@ describe("swap program - create offer", () => {
       // Create vault token account with vaultAuthority as signer and owner
       vaultTokenAccount = await token.createAssociatedTokenAccount(
         provider.connection,
-        vaultAuthority, // Use vaultAuthority as signer
         inputMint.publicKey,
         vaultAuthority, // Use vaultAuthority as owner
       );
@@ -132,16 +131,10 @@ describe("swap program - create offer", () => {
       )
       .accounts({
         maker: maker.publicKey,
-        offer: offerPDA,
-        whitelist: whitelistPDA,
-        offerFeeConfig: feeConfigPDA,
         inputTokenMint: inputMint.publicKey,
         outputTokenMint: outputMint.publicKey,
         makerTokenAccount: makerTokenAccount,
         vaultTokenAccount: vaultTokenAccount,
-        vaultAuthority: vaultAuthority,
-        tokenProgram: token.TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId
       })
       .signers([maker])
       .rpc();

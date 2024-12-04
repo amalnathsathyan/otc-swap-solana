@@ -28,5 +28,18 @@ pub enum SwapError {
     UnauthorizedAdmin,
     #[msg("Offer has not expired yet")]
     OfferNotExpired,
-
+    #[msg("Maximum number of whitelisted mints reached")]
+    TooManyMints,
+    #[msg("Fee percentage cannot exceed 100%")]
+    InvalidFeePercentage,
+    #[msg("Admin has not been initialized")]
+    AdminNotInitialized,
+    #[msg("Fee configuration has not been initialized")]
+    FeeConfigNotInitialized,
+    #[msg("Invalid token account owner")]
+    InvalidTokenAccount,
+    #[msg("Token mint mismatch")]
+    InvalidTokenMint,
+    #[msg("Deadline must be in the future")]
+    InvalidDeadline,
 }
