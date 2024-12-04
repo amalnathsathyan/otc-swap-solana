@@ -42,7 +42,6 @@ pub mod swap {
     // Maker Functions
     pub fn create_offer_and_send_tokens_to_vault(
         ctx: Context<CreateOffer>,
-        id: u64,
         input_token_mint: Pubkey,
         output_token_mint: Pubkey,
         token_amount: u64,
@@ -51,7 +50,7 @@ pub mod swap {
         fee_percentage: u64,
         fee_wallet: Pubkey,
     ) -> Result<()> {
-        instructions::create_offer::create_offer(ctx, id, input_token_mint, output_token_mint, token_amount, expected_total_amount, deadline, fee_percentage, fee_wallet)
+        instructions::create_offer::create_offer(ctx, input_token_mint, output_token_mint, token_amount, expected_total_amount, deadline, fee_percentage, fee_wallet)
     }
 
     pub fn add_taker_whitelist(
