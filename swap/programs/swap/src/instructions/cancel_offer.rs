@@ -1,86 +1,142 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount};
+use anchor_spl::token::{self, Token, TokenAccount, CloseAccount};
 use crate::state::*;
 use crate::error::*;
 
-/// Accounts struct for canceling an offer in the token swap program
-/// This structure defines all the accounts needed to cancel an existing offer
+/// CancelOffer instruction account structure
+/// Allows maker to cancel their offer and recover tokens if:
+/// 1. The offer has expired, or
+/// 2. The maker wants to cancel their own active offer
 #[derive(Accounts)]
 pub struct CancelOffer<'info> {
-    /// The maker (creator) of the offer who is requesting cancellation
-    /// Must be the signer of the transaction
+    /// The maker of the offer who will receive back their tokens
     #[account(mut)]
     pub maker: Signer<'info>,
-
-    /// The token account belonging to the maker that will receive the returned tokens
-    /// Must be mutable as it will receive tokens from the vault
-    #[account(mut)]
-    pub maker_token_account: Account<'info, TokenAccount>,
-
-    /// The vault's token account that currently holds the locked tokens
-    /// Must be mutable as tokens will be withdrawn from it
-    #[account(mut)]
-    pub vault_token_account: Account<'info, TokenAccount>,
-
-    /// The offer account that contains the details of the offer being cancelled
-    /// Constraints ensure:
-    /// 1. Only the original maker can cancel the offer
-    /// 2. The offer must be in Ongoing status
+    
+    /// The offer account to be cancelled
+    /// Will be closed and rent returned to maker
     #[account(
         mut,
         constraint = offer.maker == maker.key(),
-        constraint = offer.status == OfferStatus::Ongoing
+        constraint = offer.status == OfferStatus::Ongoing @ SwapError::InvalidOfferStatus,
+        seeds = [
+            b"offer",
+            maker.key().as_ref(),
+            offer.offer_id.to_le_bytes().as_ref()
+        ],
+        bump,
+        close = maker
     )]
     pub offer: Account<'info, Offer>,
 
-    /// The PDA that has authority over the vault
-    /// This account is used to sign the transfer of tokens back to the maker
-    /// CHECK: PDA for vault authority
+    /// The whitelist PDA to be closed
     #[account(
-        seeds = [b"vault"],
+        mut,
+        seeds = [
+            b"whitelist",
+            offer.key().as_ref()
+        ],
+        bump,
+        constraint = whitelist.offer == offer.key(),
+        close = maker
+    )]
+    pub whitelist: Account<'info, Whitelist>,
+
+    /// The fee config PDA to be closed
+    #[account(
+        mut,
+        seeds = [
+            b"fee_config",
+            offer.key().as_ref()
+        ],
+        bump,
+        close = maker
+    )]
+    pub offer_fee_config: Account<'info, FeeConfig>,
+
+    /// The maker's token account to receive returned tokens
+    #[account(
+        mut,
+        constraint = maker_token_account.owner == maker.key(),
+        constraint = maker_token_account.mint == offer.input_token_mint
+    )]
+    pub maker_token_account: Account<'info, TokenAccount>,
+
+    /// The vault's token account holding the offered tokens
+    #[account(
+        mut,
+        constraint = vault_token_account.mint == offer.input_token_mint
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    /// The PDA with authority over the vault
+    /// CHECK: Validated by seeds constraint
+    #[account(
+        seeds = [b"vault", offer.input_token_mint.as_ref()],
         bump
     )]
-    pub vault_authority: UncheckedAccount<'info>,
+    pub vault_authority: AccountInfo<'info>,
 
-    /// The SPL Token program account
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
-impl<'info> CancelOffer<'info> {
-    /// Process the cancellation of an offer
-    /// 
-    /// This function:
-    /// 1. Verifies the offer is in the correct status
-    /// 2. Transfers the locked tokens back to the maker's token account
-    /// 3. Updates the offer status to Cancelled
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The offer is not in Ongoing status
-    /// - The token transfer fails
-    pub fn process(&mut self) -> Result<()> {
-        let offer = &mut self.offer;
+/// Processes the cancellation of a token offer. This function:
+/// 1. Verifies cancellation conditions (offer expired or maker cancelling)
+/// 2. Returns tokens from vault to maker
+/// 3. Closes vault token account
+/// 4. Updates offer status to Cancelled
+///
+/// # Arguments
+/// * `ctx` - The context containing all accounts required for offer cancellation
+///
+/// # Returns
+/// * `Result<()>` - Success or error
+///
+/// # Errors
+/// * `SwapError::CannotCancelOffer` - If cancellation conditions aren't met
+pub fn update_cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
+    let offer = &mut ctx.accounts.offer;
+    let current_time = Clock::get()?.unix_timestamp;
 
-        // Verify offer status is Ongoing
-        require!(offer.status == OfferStatus::Ongoing, SwapError::InvalidOfferStatus);
-        
-        // Transfer tokens from vault back to maker's account
-        // Uses PDA signing with "vault" seeds
-        token::transfer(
-            CpiContext::new_with_signer(
-                self.token_program.to_account_info(),
-                token::Transfer {
-                    from: self.vault_token_account.to_account_info(),
-                    to: self.maker_token_account.to_account_info(),
-                    authority: self.vault_authority.to_account_info(),
-                },
-                &[&[b"vault"]],
-            ),
-            offer.token_amount,
-        )?;
+    require!(
+        current_time > offer.deadline || offer.maker == ctx.accounts.maker.key(),
+        SwapError::CannotCancelOffer
+    );
 
-        // Update offer status to Cancelled
-        offer.status = OfferStatus::Cancelled;
-        Ok(())
-    }
+    let vault_auth_bump = ctx.bumps.vault_authority;
+    let seeds = &[
+        b"vault",
+        offer.input_token_mint.as_ref(),
+        &[vault_auth_bump],
+    ];
+
+    token::transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            token::Transfer {
+                from: ctx.accounts.vault_token_account.to_account_info(),
+                to: ctx.accounts.maker_token_account.to_account_info(),
+                authority: ctx.accounts.vault_authority.to_account_info(),
+            },
+            &[seeds]
+        ),
+        offer.token_amount,
+    )?;
+
+    token::close_account(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            CloseAccount {
+                account: ctx.accounts.vault_token_account.to_account_info(),
+                destination: ctx.accounts.maker.to_account_info(),
+                authority: ctx.accounts.vault_authority.to_account_info(),
+            },
+            &[seeds]
+        )
+    )?;
+
+    offer.status = OfferStatus::Cancelled;
+
+    Ok(())
 }

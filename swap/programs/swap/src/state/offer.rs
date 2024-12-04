@@ -14,11 +14,15 @@ pub struct Offer {
 
     /// The mint address of the token being offered
     /// Must be a whitelisted token mint if whitelist is enabled
-    pub token_mint: Pubkey,
+    pub input_token_mint: Pubkey,
 
     /// The amount of tokens being offered
     /// Decreases as partial fills occur, reaches 0 when fully filled
     pub token_amount: u64,
+
+    /// The mint address of the token being offered
+    /// Must be a whitelisted token mint if whitelist is enabled
+    pub output_token_mint: Pubkey,
 
     /// The total amount of payment tokens expected in return
     /// Used to calculate the exchange rate for partial fills
@@ -32,9 +36,8 @@ pub struct Offer {
     /// Controls what operations are permitted
     pub status: OfferStatus,
 
-    /// Bump seed used in PDA derivation
-    /// Stored for validation in subsequent transactions
-    pub bump: u8,
+    pub fee_percentage: u64,        
+    pub fee_wallet: Pubkey, 
 }
 
 /// Enum representing the possible states of an offer

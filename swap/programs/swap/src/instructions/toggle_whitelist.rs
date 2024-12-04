@@ -36,7 +36,6 @@ pub struct ToggleRequireWhitelist<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> ToggleRequireWhitelist<'info> {
     /// Toggles the global whitelist requirement setting
     /// 
     /// # Function Operation
@@ -46,9 +45,8 @@ impl<'info> ToggleRequireWhitelist<'info> {
     ///
     /// # Returns
     /// * `Result<()>` - Ok if the toggle was successful
-    pub fn process(&mut self) -> Result<()> {
+    pub fn update_toggle_whitelist(ctx: Context<ToggleRequireWhitelist>) -> Result<()> {
         // Toggle the whitelist requirement flag
-        self.whitelist_config.require_whitelist = !self.whitelist_config.require_whitelist;
+        ctx.accounts.whitelist_config.require_whitelist = !ctx.accounts.whitelist_config.require_whitelist;
         Ok(())
     }
-}

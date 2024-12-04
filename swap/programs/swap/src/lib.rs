@@ -11,6 +11,7 @@ declare_id!("5JAQD9WVWqjKeeeybZ3cBfP59RrfBCrNeWGfeiLnrUxe");
 
 #[program]
 pub mod swap {
+
     use super::*;
 
     // Admin functions
@@ -23,54 +24,59 @@ pub mod swap {
     }
 
     pub fn update_fee(ctx: Context<UpdateFee>, new_fee: u64) -> Result<()> {
-        ctx.accounts.process(new_fee)
-        }
+        instructions::update_fee::fee_update(ctx, new_fee)
+    }
 
     pub fn toggle_require_whitelist(ctx: Context<ToggleRequireWhitelist>) -> Result<()> {
-        ctx.accounts.process()
+        instructions::toggle_whitelist::update_toggle_whitelist(ctx)
     }
 
     pub fn update_fee_address(ctx: Context<UpdateFeeAddress>, new_address: Pubkey) -> Result<()> {
-        ctx.accounts.process(new_address)
+        instructions::update_fee_address::fee_address_update(ctx, new_address)
+    }
+
+    pub fn expire_offer(ctx: Context<CheckExpiredOffer>) -> Result<()> {
+        instructions::expire_offer::update_expire_offer(ctx)
     }
 
     // Maker Functions
     pub fn create_offer_and_send_tokens_to_vault(
         ctx: Context<CreateOffer>,
         id: u64,
-        token_mint: Pubkey,
+        input_token_mint: Pubkey,
+        output_token_mint: Pubkey,
         token_amount: u64,
         expected_total_amount: u64,
         deadline: i64,
-        bump: u8,
+        fee_percentage: u64,
+        fee_wallet: Pubkey,
     ) -> Result<()> {
-        ctx.accounts.process(id,token_mint, token_amount, expected_total_amount, deadline, bump)
+        instructions::create_offer::create_offer(ctx, id, input_token_mint, output_token_mint, token_amount, expected_total_amount, deadline, fee_percentage, fee_wallet)
     }
 
     pub fn add_taker_whitelist(
-        ctx: Context<ModifyWhitelist>,
+        ctx: Context<CreateOffer>,
         taker: Pubkey,
     ) -> Result<()> {
-        ctx.accounts.add_taker(taker)
+        instructions::create_offer::add_taker(ctx, taker)
     }
 
     pub fn remove_taker_whitelist(
-        ctx: Context<ModifyWhitelist>,
+        ctx: Context<CreateOffer>,
         taker: Pubkey,
     ) -> Result<()> {
-        ctx.accounts.remove_taker(taker)
+        instructions::create_offer::remove_taker(ctx, taker)
     }
 
     pub fn cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
-        ctx.accounts.process()
+        instructions::cancel_offer::update_cancel_offer(ctx)
     }
 
     // Taker Function
     pub fn take_offer(
         ctx: Context<TakeOffer>, 
-        token_amount: u64,
-        vault_authority_bump: u8
+        token_amount: u64
     ) -> Result<()> {
-        ctx.accounts.process(token_amount, vault_authority_bump)
+        instructions::taker_offer::process(ctx, token_amount)
     }
 }

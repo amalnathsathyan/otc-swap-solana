@@ -36,7 +36,6 @@ pub struct UpdateFee<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> UpdateFee<'info> {
     /// Updates the protocol fee amount
     /// 
     /// # Arguments
@@ -48,9 +47,8 @@ impl<'info> UpdateFee<'info> {
     ///
     /// # Returns
     /// * `Result<()>` - Ok if the fee amount was successfully updated
-    pub fn process(&mut self, new_fee: u64) -> Result<()> {
+    pub fn fee_update(ctx: Context<UpdateFee>, new_fee: u64) -> Result<()> {
         // Update the fee amount in basis points
-        self.fee_config.fee_amount = new_fee;
+        ctx.accounts.fee_config.fee_percentage = new_fee;
         Ok(())
     }
-}

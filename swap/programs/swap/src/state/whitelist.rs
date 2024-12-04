@@ -4,6 +4,9 @@ use anchor_lang::prelude::*;
 /// Controls which addresses can take (accept) a particular offer
 #[account]
 pub struct Whitelist {
+    /// Maker who controls the whitelist
+    pub maker: Pubkey,
+    
     /// The public key of the offer this whitelist is associated with
     /// Links the whitelist to its specific offer
     pub offer: Pubkey,

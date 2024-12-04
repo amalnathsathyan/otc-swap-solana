@@ -36,7 +36,6 @@ pub struct UpdateFeeAddress<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> UpdateFeeAddress<'info> {
     /// Updates the address that receives protocol fees
     /// 
     /// # Arguments
@@ -47,9 +46,8 @@ impl<'info> UpdateFeeAddress<'info> {
     ///
     /// # Returns
     /// * `Result<()>` - Ok if the fee address was successfully updated
-    pub fn process(&mut self, new_address: Pubkey) -> Result<()> {
+    pub fn fee_address_update(ctx: Context<UpdateFeeAddress>, new_address: Pubkey) -> Result<()> {
         // Update the fee recipient address
-        self.fee_config.fee_address = new_address;
+        ctx.accounts.fee_config.fee_address = new_address;
         Ok(())
     }
-}

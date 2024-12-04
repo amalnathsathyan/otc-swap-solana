@@ -20,4 +20,13 @@ pub enum SwapError {
     OfferExpired,
     #[msg("Insufficient amount available")]
     InsufficientAmount,
+    #[msg("Cannot Cancel Offer")]
+    CannotCancelOffer,
+    #[msg("Invalid Maker")]
+    UnauthorizedMaker,
+    #[msg("Unauthorized admin")]
+    UnauthorizedAdmin,
+    #[msg("Offer has not expired yet")]
+    OfferNotExpired,
+
 }
