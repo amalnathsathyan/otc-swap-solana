@@ -7,7 +7,7 @@ pub use instructions::*;
 pub use error::*;
 pub use state::*;
 
-declare_id!("5JAQD9WVWqjKeeeybZ3cBfP59RrfBCrNeWGfeiLnrUxe");
+declare_id!("24Su4NEPKHey1pnr7LS35h4hTzCUANfsysMT9oy5G8iU");
 
 #[program]
 pub mod swap {
