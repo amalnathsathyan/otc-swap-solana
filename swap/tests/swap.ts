@@ -23,15 +23,15 @@ describe("swap program - create offer", () => {
   let feeConfig: PublicKey;
   let whitelistConfig: PublicKey;
   let mintWhitelist: PublicKey;
-  let offer:PublicKey;
-  let makerTokenAccount:Account;
-  let vaultTokenAccount:Account;
-  let vaultAuthority:PublicKey;
-  let whitelist:PublicKey;
-  let makerRecieveTokenAccount:PublicKey;
-  let takerPaymentTokenAccount:PublicKey;
-  let takerReceiveTokenAccount:PublicKey;
-  let feeTokenAccount:PublicKey;
+  let offer: PublicKey;
+  let makerTokenAccount: Account;
+  let vaultTokenAccount: Account;
+  let vaultAuthority: PublicKey;
+  let whitelist: PublicKey;
+  let makerRecieveTokenAccount: PublicKey;
+  let takerPaymentTokenAccount: PublicKey;
+  let takerReceiveTokenAccount: PublicKey;
+  let feeTokenAccount: PublicKey;
 
   before(async () => {
     try {
@@ -49,23 +49,20 @@ describe("swap program - create offer", () => {
         blockhash: latestBlockhash.blockhash,
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
         signature: makerAirdropTx,
-      });
+      }, 'confirmed');
 
       await connection.confirmTransaction({
         blockhash: latestBlockhash.blockhash,
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
         signature: takerAirdropTx,
-      });
+        /* */
+      }, 'confirmed');
 
-      await connection.confirmTransaction({
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-        signature: adminAirdropTx,
-      });
+      const tx = await connection.confirmTransaction(adminAirdropTx,'confirmed');
 
       console.log("Airdrop Successful with hash", makerAirdropTx)
       console.log("Airdrop Successful with hash", takerAirdropTx)
-      console.log("Airdrop Successful with hash", adminAirdropTx)
+      console.log("Admin Airdrop Successful with hash", tx)
 
       const inputMint = await createMint(
         connection,
@@ -143,6 +140,8 @@ describe("swap program - create offer", () => {
         outputMintTakerATA.address,
         admin,
         2000_000000000,
+        undefined,
+        {commitment:'confirmed'}
       )
       console.log("Token minted to Taker ATA:", mintToTakerTx)
 
@@ -176,12 +175,12 @@ describe("swap program - create offer", () => {
     )[0];
 
     offer = PublicKey.findProgramAddressSync(
-      [Buffer.from('offer'),maker.publicKey.toBuffer()],
+      [Buffer.from('offer'), maker.publicKey.toBuffer()],
       program.programId
     )[0];
 
 
-    program.methods.initializeAdmin(
+    await program.methods.initializeAdmin(
       new anchor.BN('200'),
       new PublicKey('2vBAnVajtqmP4RBm8Vw5gzYEy3XCT9Mf1NBeQ2TPkiVF'),
       false,
@@ -200,30 +199,30 @@ describe("swap program - create offer", () => {
   });
 
   it("add token-mints to whitelist", async () => {
-     program.methods.addMintsToWhitelist(
-      [mint_a.publicKey,mint_b.publicKey,mint_c.publicKey]
-     ).accounts({
+    program.methods.addMintsToWhitelist(
+      [mint_a.publicKey, mint_b.publicKey, mint_c.publicKey]
+    ).accounts({
       admin: admin.publicKey,
       adminConfig: adminConfig,
       mintWhitelist: mintWhitelist,
       systemProgram: SystemProgram.programId
-     }).signers(
+    }).signers(
       [admin]
-     ).rpc()
+    ).rpc()
   })
 
-  it("removes token-mints from whitelist", async ()=>{
-    
+  it("removes token-mints from whitelist", async () => {
+
     program.methods.removeMintsFromWhitelist(
       [mint_c.publicKey]
-     ).accounts({
+    ).accounts({
       admin: admin.publicKey,
       adminConfig: adminConfig,
       mintWhitelist: mintWhitelist,
       systemProgram: SystemProgram.programId
-     }).signers(
+    }).signers(
       [admin]
-     ).rpc()
+    ).rpc()
   })
 
   it("updates fee percentage", async () => {
@@ -251,31 +250,31 @@ describe("swap program - create offer", () => {
     ).rpc()
   })
 
-  it("Toggles check for token whitelist", async()=> {
-      program.methods.toggleRequireWhitelist(
-      ).accounts({
-        admin: admin.publicKey,
-        adminConfig: adminConfig,
-        whitelistConfig: whitelistConfig,
-        systemProgram: SystemProgram.programId,
-      }).signers(
-        [admin]
-      ).rpc()
-  })
-
-  it("Check for offers with no-takers, and update state to Expired after deadline", async()=>{
-    program.methods.expireOffer()
-    .accounts({
+  it("Toggles check for token whitelist", async () => {
+    program.methods.toggleRequireWhitelist(
+    ).accounts({
       admin: admin.publicKey,
       adminConfig: adminConfig,
-      offer: offer,
-      systemProgram: SystemProgram.programId
+      whitelistConfig: whitelistConfig,
+      systemProgram: SystemProgram.programId,
     }).signers(
       [admin]
     ).rpc()
   })
-  it("creates offer and send tokens to vault", async()=>{
-    
+
+  it("Check for offers with no-takers, and update state to Expired after deadline", async () => {
+    program.methods.expireOffer()
+      .accounts({
+        admin: admin.publicKey,
+        adminConfig: adminConfig,
+        offer: offer,
+        systemProgram: SystemProgram.programId
+      }).signers(
+        [admin]
+      ).rpc()
+  })
+  it("creates offer and send tokens to vault", async () => {
+
     vaultTokenAccount = await getOrCreateAssociatedTokenAccount(
       connection,
       maker,
@@ -296,18 +295,18 @@ describe("swap program - create offer", () => {
       offer: offer,
       adminConfig: adminConfig,
       feeConfig: feeConfig,
-      makerTokenAccount:makerTokenAccount.address,
-      vaultTokenAccount:vaultTokenAccount.address,
-      inputTokenMint:mint_a.publicKey, // Defining input token mint here
-      outputTokenMint:mint_b.publicKey, // Defining output token mint here
+      makerTokenAccount: makerTokenAccount.address,
+      vaultTokenAccount: vaultTokenAccount.address,
+      inputTokenMint: mint_a.publicKey, // Defining input token mint here
+      outputTokenMint: mint_b.publicKey, // Defining output token mint here
       tokenProgram: TOKEN_PROGRAM_ID, // It can accept both TOKEN_PROGRAM & TOKEN_22 PROGRAM, proper input expected from fron-end
       associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
-      systemProgram:SystemProgram.programId
+      systemProgram: SystemProgram.programId
     }).signers(
       [maker]
     ).rpc()
   })
-  it("add taker addresses to whitelist", async() =>{
+  it("add taker addresses to whitelist", async () => {
 
     whitelist = PublicKey.findProgramAddressSync(
       [Buffer.from('whitelist'), maker.publicKey.toBuffer()],
@@ -315,11 +314,11 @@ describe("swap program - create offer", () => {
     )[0];
 
     program.methods.addTakerWhitelist(
-      [taker.publicKey,new PublicKey('4sijvjMmXG8sdzwsLJevQ1dSXpY6a9T7fPRkVLeqr6Wm'), new PublicKey('7ZK3Y3izGJDGEd2CAvXpotCZinKuYk71YABoHxBEdo4G')]
+      [taker.publicKey, new PublicKey('4sijvjMmXG8sdzwsLJevQ1dSXpY6a9T7fPRkVLeqr6Wm'), new PublicKey('7ZK3Y3izGJDGEd2CAvXpotCZinKuYk71YABoHxBEdo4G')]
     ).accounts({
-      maker:maker.publicKey,
-      whitelist:whitelist,
-      offer:offer,
+      maker: maker.publicKey,
+      whitelist: whitelist,
+      offer: offer,
       systemProgram: SystemProgram.programId
     }).signers(
       [maker]
@@ -329,55 +328,56 @@ describe("swap program - create offer", () => {
     program.methods.removeTakerWhitelist(
       [new PublicKey('7ZK3Y3izGJDGEd2CAvXpotCZinKuYk71YABoHxBEdo4G')]
     ).accounts({
-      maker:maker.publicKey,
-      whitelist:whitelist,
-      offer:offer,
+      maker: maker.publicKey,
+      whitelist: whitelist,
+      offer: offer,
       systemProgram: SystemProgram.programId
     }).signers(
       [maker]
     ).rpc()
   })
-  it("maker cancels the offer and close vault&whitelist PDAs", async() =>{
+  it("maker cancels the offer and close vault&whitelist PDAs", async () => {
     vaultAuthority = PublicKey.findProgramAddressSync(
-      [Buffer.from('vault'),mint_a.publicKey.toBuffer()],
+      [Buffer.from('vault'), mint_a.publicKey.toBuffer()],
       program.programId
     )[0];
 
     program.methods.cancelOffer()
-    .accounts({
-      maker:maker.publicKey,
-      offer:offer,
-      whitelist:whitelist,
-      feeConfig: feeConfig,
-      makerTokenAccount: makerTokenAccount.address,
-      vaultTokenAccount:vaultTokenAccount.address,
-      vaultAuthority:vaultAuthority,
-      tokenProgram:TOKEN_PROGRAM_ID,
-      systemProgram: SystemProgram.programId
-    }).signers(
-      [maker]
-    ).rpc()
+      .accounts({
+        maker: maker.publicKey,
+        offer: offer,
+        whitelist: whitelist,
+        makerTokenAccount: makerTokenAccount.address,
+        vaultTokenAccount: vaultTokenAccount.address,
+        adminConfig: adminConfig,
+        inputTokenMint: mint_a.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
+        systemProgram: SystemProgram.programId
+      }).signers(
+        [maker]
+      ).rpc()
   })
   it("taker partially accepts an offer and swap tokens", async () => {
 
-    makerRecieveTokenAccount = await getAssociatedTokenAddress(mint_b.publicKey,maker.publicKey);
-    takerPaymentTokenAccount = await getAssociatedTokenAddress(mint_b.publicKey,taker.publicKey);
-    takerReceiveTokenAccount = await getAssociatedTokenAddress(mint_a.publicKey,taker.publicKey);
-    feeTokenAccount = await getAssociatedTokenAddress(mint_b.publicKey,new PublicKey('B5WFNofBtPcFUS9oR2oAuxTHsSCUVp3C4VjFtejKEUnv'));
+    makerRecieveTokenAccount = await getAssociatedTokenAddress(mint_b.publicKey, maker.publicKey);
+    takerPaymentTokenAccount = await getAssociatedTokenAddress(mint_b.publicKey, taker.publicKey);
+    takerReceiveTokenAccount = await getAssociatedTokenAddress(mint_a.publicKey, taker.publicKey);
+    feeTokenAccount = await getAssociatedTokenAddress(mint_b.publicKey, new PublicKey('B5WFNofBtPcFUS9oR2oAuxTHsSCUVp3C4VjFtejKEUnv'));
 
 
     program.methods.takeOffer(
       new anchor.BN('100')
     ).accounts({
-      taker:taker.publicKey,
-      offer:offer,
-      maker:maker.publicKey,
+      taker: taker.publicKey,
+      offer: offer,
+      maker: maker.publicKey,
       whitelist: whitelist,
       makerRecieveTokenAccount: makerRecieveTokenAccount,
       takerPaymentTokenAccount: takerPaymentTokenAccount,
-      takerReceiveTokenAccount:takerReceiveTokenAccount,
-      feeTokenAccount:feeTokenAccount,
-      vaultTokenAccount:vaultTokenAccount.address,
+      takerReceiveTokenAccount: takerReceiveTokenAccount,
+      feeTokenAccount: feeTokenAccount,
+      vaultTokenAccount: vaultTokenAccount.address,
       inputTokenMint: mint_a.publicKey,
       outputTokenMint: mint_b.publicKey,
       tokenProgram: TOKEN_PROGRAM_ID,
@@ -391,15 +391,15 @@ describe("swap program - create offer", () => {
     program.methods.takeOffer(
       new anchor.BN('150')
     ).accounts({
-      taker:taker.publicKey,
-      offer:offer,
-      maker:maker.publicKey,
+      taker: taker.publicKey,
+      offer: offer,
+      maker: maker.publicKey,
       whitelist: whitelist,
       makerRecieveTokenAccount: makerRecieveTokenAccount,
       takerPaymentTokenAccount: takerPaymentTokenAccount,
-      takerReceiveTokenAccount:takerReceiveTokenAccount,
-      feeTokenAccount:feeTokenAccount,
-      vaultTokenAccount:vaultTokenAccount.address,
+      takerReceiveTokenAccount: takerReceiveTokenAccount,
+      feeTokenAccount: feeTokenAccount,
+      vaultTokenAccount: vaultTokenAccount.address,
       inputTokenMint: mint_a.publicKey,
       outputTokenMint: mint_b.publicKey,
       tokenProgram: TOKEN_PROGRAM_ID,
