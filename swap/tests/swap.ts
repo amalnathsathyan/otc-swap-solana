@@ -37,11 +37,14 @@ describe("swap program - create offer", () => {
     try {
 
       console.log("maker:", maker.publicKey.toBase58())
+      console.log("taker:", taker.publicKey.toBase58())
+      console.log("admin:", admin.publicKey.toBase58())
+
       // Airdrop SOL to maker and taker
       const airdropAmount = anchor.web3.LAMPORTS_PER_SOL * 5;
       const makerAirdropTx = await connection.requestAirdrop(maker.publicKey, airdropAmount);
       const takerAirdropTx = await connection.requestAirdrop(taker.publicKey, airdropAmount);
-      const adminAirdropTx = await connection.requestAirdrop(taker.publicKey, airdropAmount);
+      const adminAirdropTx = await connection.requestAirdrop(admin.publicKey, airdropAmount);
 
       const latestBlockhash = await connection.getLatestBlockhash();
 
@@ -55,14 +58,19 @@ describe("swap program - create offer", () => {
         blockhash: latestBlockhash.blockhash,
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
         signature: takerAirdropTx,
-        /* */
       }, 'confirmed');
 
-      const tx = await connection.confirmTransaction(adminAirdropTx,'confirmed');
+      await connection.confirmTransaction({
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        signature: adminAirdropTx,
+      }, 'confirmed');
 
-      console.log("Airdrop Successful with hash", makerAirdropTx)
-      console.log("Airdrop Successful with hash", takerAirdropTx)
-      console.log("Admin Airdrop Successful with hash", tx)
+      // const tx = await connection.confirmTransaction(adminAirdropTx,'confirmed');
+
+      console.log("Maker Airdrop Successful with hash", makerAirdropTx)
+      console.log("Taker Airdrop Successful with hash", takerAirdropTx)
+      console.log("Admin Airdrop Successful with hash", adminAirdropTx)
 
       const inputMint = await createMint(
         connection,
