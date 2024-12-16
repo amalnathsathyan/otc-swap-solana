@@ -5,8 +5,7 @@ use anchor_lang::prelude::*;
 #[account]
 pub struct Offer {
     /// Unique identifier for the offer
-    /// Set by the maker when creating the offer
-    pub offer_id: Pubkey,
+    pub offer_id: u64,
 
     /// The public key of the account that created this offer
     /// Controls permissions for offer modification and cancellation
@@ -27,6 +26,12 @@ pub struct Offer {
     /// The total amount of payment tokens expected in return
     /// Used to calculate the exchange rate for partial fills
     pub expected_total_amount: u64,
+
+    ///token amount_a remaining after each trade
+    pub token_amount_remaining: u64,
+
+    /// token_b fullfilled
+    pub expected_fulfilled_amount: u64,
 
     /// Unix timestamp when this offer expires
     /// Offer cannot be taken after this time

@@ -6,6 +6,22 @@ use anchor_spl::{
 use crate::state::*;
 use crate::error::*;
 
+#[event]
+pub struct OfferCancelled {
+    pub offer_id: u64,
+    pub maker: Pubkey,
+    pub token_amount: u64,
+    pub token_mint: Pubkey,
+    pub reason: CancellationReason,
+    pub timestamp: i64,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq)]
+pub enum CancellationReason {
+    Expired,
+    MakerCancelled,
+}
+
 /// Account validation structure for the cancel offer instruction
 /// Allows offer makers to cancel their offers and recover tokens in two cases:
 /// 1. When the offer has expired (past deadline)
@@ -35,26 +51,24 @@ pub struct CancelOffer<'info> {
     /// - Must be in Ongoing status
     /// - Will be closed with rent returned to maker
     ///
-    /// Seeds: ["offer", maker_pubkey]
+    /// Seeds: ["offer", maker_pubkey, offer_id]
     #[account(
         mut,
         constraint = offer.maker == maker.key(),
         constraint = offer.status == OfferStatus::Ongoing @ SwapError::InvalidOfferStatus,
-        seeds = [b"offer", maker.key().as_ref()],
+        seeds = [b"offer", maker.key().as_ref(), &offer.offer_id.to_le_bytes()],
         bump,
-        close = maker
     )]
     pub offer: Account<'info, Offer>,
 
     /// The whitelist PDA storing allowed takers
     /// Will be closed and rent returned to maker
     /// 
-    /// Seeds: ["whitelist", maker_pubkey]
+    /// Seeds: ["whitelist", maker_pubkey, offer_id]
     #[account(
         mut,
-        seeds = [b"whitelist", maker.key().as_ref()],
+        seeds = [b"whitelist", maker.key().as_ref(), &offer.offer_id.to_le_bytes()],
         bump,
-        close = maker
     )]
     pub whitelist: Account<'info, Whitelist>,
 
@@ -83,7 +97,8 @@ pub struct CancelOffer<'info> {
         mut,
         associated_token::mint = input_token_mint,
         associated_token::authority = offer,
-        constraint = vault_token_account.mint == offer.input_token_mint
+        associated_token::token_program = token_program,
+        constraint = vault_token_account.mint == offer.input_token_mint,
     )]
     pub vault_token_account: InterfaceAccount<'info, TokenAccount>,
 
@@ -143,35 +158,38 @@ pub struct CancelOffer<'info> {
 /// * `SwapError::CannotCancelOffer` - If neither expiry nor maker cancellation conditions are met
 /// * `SwapError::InvalidOfferStatus` - If offer is not in Ongoing status
 /// * Various token program errors for transfer failures
+
 pub fn update_cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
-    // Get current time and store important values
     let current_time = Clock::get()?.unix_timestamp;
-    let maker_key = ctx.accounts.maker.key();
 
-    // Store necessary offer values before mutable borrow
-    let token_amount = ctx.accounts.offer.token_amount;
-    let input_token_decimals = ctx.accounts.input_token_mint.decimals;
-    let offer_deadline = ctx.accounts.offer.deadline;
-    let offer_maker = ctx.accounts.offer.maker;
+    // Validate cancellation conditions
+    let is_expired = current_time > ctx.accounts.offer.deadline;
+    let is_maker = ctx.accounts.offer.maker == ctx.accounts.maker.key();
+    require!(is_expired || is_maker, SwapError::CannotCancelOffer);
 
-    // Store offer's authority info for CPI calls
-    let offer_auth_info = ctx.accounts.offer.to_account_info();
+    let cancellation_reason = if is_expired {
+        CancellationReason::Expired
+    } else {
+        CancellationReason::MakerCancelled
+    };
 
-    // Verify cancellation conditions
-    require!(
-        current_time > offer_deadline || offer_maker == maker_key,
-        SwapError::CannotCancelOffer
+    msg!(
+       "cancelling offer"
     );
 
-    // Prepare offer PDA signer seeds
-    let offer_bump = ctx.bumps.offer;
+    // Transfer remaining tokens back to the maker
+    let token_amount = ctx.accounts.offer.token_amount_remaining;
     let seeds = &[
         b"offer",
-        maker_key.as_ref(),
-        &[offer_bump],
+        ctx.accounts.offer.maker.as_ref(),
+        &ctx.accounts.offer.offer_id.to_le_bytes(),
+        &[ctx.bumps.offer],
     ];
+    let signer_seeds = &[&seeds[..]];
 
-    // Return tokens to maker using transfer_checked for safety
+    msg!("Preparing to close vault account");
+
+    msg!("Transferring {} tokens back to maker", token_amount);
     token_interface::transfer_checked(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
@@ -179,36 +197,42 @@ pub fn update_cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
                 from: ctx.accounts.vault_token_account.to_account_info(),
                 mint: ctx.accounts.input_token_mint.to_account_info(),
                 to: ctx.accounts.maker_token_account.to_account_info(),
-                authority: offer_auth_info.clone(),
+                authority: ctx.accounts.offer.to_account_info(),
             },
-            &[seeds]
+            signer_seeds,
         ),
         token_amount,
-        input_token_decimals,
+        ctx.accounts.input_token_mint.decimals,
     )?;
 
-    // Close vault token account and return rent to maker
+    // Mark offer as cancelled
+
+    // Close the vault account
+    msg!("Closing vault account...");
     token_interface::close_account(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             token_interface::CloseAccount {
                 account: ctx.accounts.vault_token_account.to_account_info(),
                 destination: ctx.accounts.maker.to_account_info(),
-                authority: offer_auth_info,
+                authority: ctx.accounts.offer.to_account_info(),
             },
-            &[seeds]
+            signer_seeds,
         )
     )?;
+    msg!("Vault closed successfully");
 
-    // Update protocol statistics
-    ctx.accounts.admin_config.update_offer_status(
-        Some(OfferStatus::Ongoing),
-        OfferStatus::Cancelled
-    );
+    ctx.accounts.offer.status = OfferStatus::Cancelled;
 
-    // Finally update offer status - triggers PDA closure
-    let offer = &mut ctx.accounts.offer;
-    offer.status = OfferStatus::Cancelled;
+    // Emit cancellation event
+    emit!(OfferCancelled {
+        offer_id: ctx.accounts.offer.offer_id,
+        maker: ctx.accounts.maker.key(),
+        token_amount,
+        token_mint: ctx.accounts.input_token_mint.key(),
+        reason: cancellation_reason,
+        timestamp: current_time,
+    });
 
     Ok(())
 }

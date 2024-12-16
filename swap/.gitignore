@@ -5,3 +5,5 @@ target
 node_modules
 test-ledger
 .yarn
+integrations/integration_script_keys.ts
+deploy-keypair.json

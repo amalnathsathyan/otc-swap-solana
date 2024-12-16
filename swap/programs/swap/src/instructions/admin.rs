@@ -2,6 +2,54 @@ use anchor_lang::prelude::*;
 use crate::state::*;
 use crate::error::*;
 
+#[event]
+pub struct AdminInitialized {
+    pub admin: Pubkey,
+    pub fee_percentage: u64,
+    pub fee_wallet: Pubkey,
+    pub require_whitelist: bool,
+    pub initial_mints: Vec<Pubkey>,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FeeUpdated {
+    pub admin: Pubkey,
+    pub old_fee: u64,
+    pub new_fee: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FeeWalletUpdated {
+    pub admin: Pubkey,
+    pub old_wallet: Pubkey,
+    pub new_wallet: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct WhitelistRequirementToggled {
+    pub admin: Pubkey,
+    pub new_status: bool,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct MintsAddedToWhitelist {
+    pub admin: Pubkey,
+    pub new_mints: Vec<Pubkey>,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct MintsRemovedFromWhitelist {
+    pub admin: Pubkey,
+    pub removed_mints: Vec<Pubkey>,
+    pub timestamp: i64,
+}
+
+
 /// Account validation struct for protocol initialization
 /// Creates and initializes all configuration PDAs
 #[derive(Accounts)]
@@ -14,16 +62,10 @@ pub struct Initialize<'info> {
     /// Space breakdown:
     /// - 8 bytes discriminator
     /// - 32 bytes admin pubkey
-    /// - 8 bytes total offers
-    /// - 8 bytes active offers
-    /// - 8 bytes completed offers
-    /// - 8 bytes cancelled offers
-    /// - 8 bytes expired offers
-    /// - 8 bytes last expiry check timestamp
     #[account(
         init,
         payer = admin,
-        space = 8 + 32 + 8 + 8 + 8 + 8 + 8 + 8,
+        space = 8 + 32,
         seeds = [b"admin_config"],
         bump
     )]
@@ -34,11 +76,10 @@ pub struct Initialize<'info> {
     /// - 8 bytes discriminator
     /// - 8 bytes fee percentage
     /// - 32 bytes fee wallet address
-    /// - 1 byte bump
     #[account(
         init,
         payer = admin,
-        space = 8 + 8 + 32 + 1,
+        space = 8 + 8 + 32,
         seeds = [b"fee"],
         bump
     )]
@@ -70,6 +111,16 @@ pub struct Initialize<'info> {
         bump
     )]
     pub mint_whitelist: Account<'info, MintWhitelist>,
+
+    /// Global PDA for tracking maker sequences
+    // #[account(
+    //     init,
+    //     payer = admin,
+    //     space = 8 + 32,  // discriminator + pubkey
+    //     seeds = [b"maker_sequence_pda"],
+    //     bump
+    // )]
+    // pub maker_sequence_pda: Account<'info, MakerSequence>,
 
     pub system_program: Program<'info, System>,
 }
@@ -178,33 +229,6 @@ pub struct ModifyMintWhitelist<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Account validation struct for expiring an offer
-#[derive(Accounts)]
-pub struct CheckExpiredOffer<'info> {
-    /// Admin signer for authorization
-    #[account(mut)]
-    pub admin: Signer<'info>,
-
-    /// Admin config account for tracking offer states
-    #[account(
-        mut,
-        seeds = [b"admin_config"],
-        bump,
-        constraint = admin_config.admin == admin.key() @ SwapError::UnauthorizedAdmin
-    )]
-    pub admin_config: Account<'info, AdminConfig>,
-
-    /// Offer account to be marked as expired
-    #[account(
-        mut,
-        constraint = Clock::get()?.unix_timestamp > offer.deadline @ SwapError::OfferNotExpired,
-        constraint = offer.status == OfferStatus::Ongoing @ SwapError::InvalidOfferStatus
-    )]
-    pub offer: Account<'info, Offer>,
-
-    pub system_program: Program<'info, System>,
-}
-
 /// Initializes the protocol with administrative settings
 ///
 /// # Arguments
@@ -226,16 +250,18 @@ pub fn initialize(
 ) -> Result<()> {
     require!(fee_percentage <= 10000, SwapError::InvalidFeePercentage);
     require!(initial_mints.len() <= 50, SwapError::TooManyMints);
+    require!(fee_wallet != Pubkey::default(), SwapError::InvalidAddress);
     
     // Initialize admin configuration
     let admin_config = &mut ctx.accounts.admin_config;
     admin_config.admin = ctx.accounts.admin.key();
-    admin_config.total_offers = 0;
-    admin_config.active_offers = 0;
-    admin_config.completed_offers = 0;
-    admin_config.cancelled_offers = 0;
-    admin_config.expired_offers = 0;
-    admin_config.last_expiry_check = Clock::get()?.unix_timestamp;
+    // admin_config.total_offers = 0;
+    // admin_config.active_offers = 0;
+    // admin_config.completed_offers = 0;
+    // admin_config.cancelled_offers = 0;
+    // admin_config.expired_offers = 0;
+    // admin_config.last_expiry_check = Clock::get()?.unix_timestamp;
+    // admin_config.maker_sequence_pda = ctx.accounts.maker_sequence_pda.key();
     
     // Initialize fee configuration
     let fee_config = &mut ctx.accounts.fee_config;
@@ -248,7 +274,21 @@ pub fn initialize(
 
     // Initialize mint whitelist
     let mint_whitelist = &mut ctx.accounts.mint_whitelist;
-    mint_whitelist.mints = initial_mints;
+    mint_whitelist.mints = initial_mints.clone();
+
+    // // Initialize maker sequence PDA
+    // let maker_sequence = &mut ctx.accounts.maker_sequence_pda;
+    // maker_sequence.maker = Pubkey::default();  // Will be set on first offer
+    // maker_sequence.offer_count = 0;
+
+    emit!(AdminInitialized {
+        admin: ctx.accounts.admin.key(),
+        fee_percentage,
+        fee_wallet,
+        require_whitelist,
+        initial_mints: initial_mints,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
     
     Ok(())
 }
@@ -262,7 +302,17 @@ pub fn fee_address_update(
     ctx: Context<UpdateFeeAddress>, 
     new_address: Pubkey
 ) -> Result<()> {
+    require!(new_address != Pubkey::default(), SwapError::InvalidAddress);
+    let old_wallet = ctx.accounts.fee_config.fee_address;
     ctx.accounts.fee_config.fee_address = new_address;
+
+    emit!(FeeWalletUpdated {
+        admin: ctx.accounts.admin.key(),
+        old_wallet,
+        new_wallet: new_address,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
     Ok(())
 }
 
@@ -278,8 +328,18 @@ pub fn fee_update(
     ctx: Context<UpdateFee>, 
     new_fee: u64
 ) -> Result<()> {
+    let old_fee = ctx.accounts.fee_config.fee_percentage;
+    
     require!(new_fee <= 10000, SwapError::InvalidFeePercentage);
     ctx.accounts.fee_config.fee_percentage = new_fee;
+
+    emit!(FeeUpdated {
+        admin: ctx.accounts.admin.key(),
+        old_fee,
+        new_fee,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+    
     Ok(())
 }
 
@@ -290,7 +350,15 @@ pub fn fee_update(
 pub fn update_toggle_whitelist(
     ctx: Context<ToggleRequireWhitelist>
 ) -> Result<()> {
-    ctx.accounts.whitelist_config.require_whitelist = !ctx.accounts.whitelist_config.require_whitelist;
+    let whitelist_config = &mut ctx.accounts.whitelist_config;
+    whitelist_config.require_whitelist = !whitelist_config.require_whitelist;
+
+    emit!(WhitelistRequirementToggled {
+        admin: ctx.accounts.admin.key(),
+        new_status: whitelist_config.require_whitelist,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
     Ok(())
 }
 
@@ -311,11 +379,18 @@ pub fn add_mints(
         SwapError::TooManyMints
     );
 
-    for mint in new_mints {
+    for mint in &new_mints {
         if !ctx.accounts.mint_whitelist.mints.contains(&mint) {
-            ctx.accounts.mint_whitelist.mints.push(mint);
+            ctx.accounts.mint_whitelist.mints.push(*mint);
         }
     }
+
+    emit!(MintsAddedToWhitelist {
+        admin: ctx.accounts.admin.key(),
+        new_mints,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
     Ok(())
 }
 
@@ -328,30 +403,14 @@ pub fn remove_mints(
     ctx: Context<ModifyMintWhitelist>,
     remove_mints: Vec<Pubkey>,
 ) -> Result<()> {
+    let removed = remove_mints.clone();
     ctx.accounts.mint_whitelist.mints.retain(|mint| !remove_mints.contains(mint));
-    Ok(())
-}
 
-/// Marks an expired offer as Expired status
-/// Only callable by admin when offer deadline has passed
-///
-/// # Arguments
-/// * `ctx` - CheckExpiredOffer context containing admin and offer accounts
-///
-/// # Errors
-/// * `SwapError::UnauthorizedAdmin` - If caller is not the admin
-/// * `SwapError::OfferNotExpired` - If offer deadline hasn't passed
-/// * `SwapError::InvalidOfferStatus` - If offer is not in Ongoing status
-pub fn update_expire_offer(ctx: Context<CheckExpiredOffer>) -> Result<()> {
-    let admin_config = &mut ctx.accounts.admin_config;
-    let offer = &mut ctx.accounts.offer;
-
-    // Update admin tracking stats
-    admin_config.update_offer_status(Some(offer.status), OfferStatus::Expired);
-    
-    // Mark offer as expired
-    offer.status = OfferStatus::Expired;
-    admin_config.last_expiry_check = Clock::get()?.unix_timestamp;
+    emit!(MintsRemovedFromWhitelist {
+        admin: ctx.accounts.admin.key(),
+        removed_mints: removed,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
 
     Ok(())
 }

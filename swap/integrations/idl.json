@@ -1,0 +1,2467 @@
+{
+  "address": "7dgTkUkHLBEZEv3VfpvkGfmmmNXZy4vdxxLz5XLyELhC",
+  "metadata": {
+    "name": "swap",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "add_mints_to_whitelist",
+      "discriminator": [
+        116,
+        92,
+        68,
+        136,
+        148,
+        70,
+        0,
+        95
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "PDA verifying admin authority"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_whitelist",
+          "docs": [
+            "Mint whitelist to modify"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_mints",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel_offer",
+      "docs": [
+        "if incase, it's completed shouldn't be able to call this"
+      ],
+      "discriminator": [
+        92,
+        203,
+        223,
+        40,
+        92,
+        89,
+        53,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "docs": [
+            "Original offer maker who will:",
+            "- Sign the cancellation transaction",
+            "- Receive returned tokens",
+            "- Receive rent from closed accounts",
+            "Must match the maker stored in the offer"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "offer",
+          "docs": [
+            "The offer PDA that serves dual purpose as:",
+            "1. Storage for offer details",
+            "2. Authority over the vault token account",
+            "",
+            "Constraints:",
+            "- Must be signed by original maker",
+            "- Must be in Ongoing status",
+            "- Will be closed with rent returned to maker",
+            "",
+            "Seeds: [\"offer\", maker_pubkey, offer_id]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "maker"
+              },
+              {
+                "kind": "account",
+                "path": "offer.offer_id",
+                "account": "Offer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "whitelist",
+          "docs": [
+            "The whitelist PDA storing allowed takers",
+            "Will be closed and rent returned to maker",
+            "",
+            "Seeds: [\"whitelist\", maker_pubkey, offer_id]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "maker"
+              },
+              {
+                "kind": "account",
+                "path": "offer.offer_id",
+                "account": "Offer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "maker_token_account",
+          "docs": [
+            "Token account owned by maker that will receive",
+            "returned tokens from the vault",
+            "",
+            "Constraints:",
+            "- Must be owned by maker",
+            "- Must match input token mint from offer"
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault token account holding the offered tokens",
+            "Created as an Associated Token Account owned by offer PDA",
+            "Will be closed after returning tokens",
+            "",
+            "Constraints:",
+            "- Must be an ATA",
+            "- Must have offer PDA as authority",
+            "- Must match input token mint"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "offer"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "input_token_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "Admin configuration PDA for updating protocol statistics",
+            "Tracks active/cancelled offer counts",
+            "",
+            "Seeds: [\"admin_config\"]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_token_mint",
+          "docs": [
+            "The mint of the token being returned",
+            "Used for transfer_checked validation"
+          ]
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "Token interface program for Token-2022 support"
+          ]
+        },
+        {
+          "name": "associated_token_program",
+          "docs": [
+            "Required for ATA validation"
+          ],
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_offer_and_send_tokens_to_vault",
+      "discriminator": [
+        205,
+        44,
+        113,
+        254,
+        16,
+        213,
+        68,
+        130
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "docs": [
+            "The offer creator who will:",
+            "- Pay for account initialization",
+            "- Provide tokens for the trade",
+            "- Control offer parameters"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "offer",
+          "docs": [
+            "The offer PDA storing all trade details",
+            "Space breakdown:",
+            "- 8 bytes discriminator",
+            "- 8 bytes offer id",
+            "- 32 bytes maker pubkey",
+            "- 32 bytes input token mint",
+            "- 8 bytes token amount",
+            "- 32 bytes output token mint",
+            "- 8 bytes expected amount",
+            "- 8 bytes for token amount remaining",
+            "- 8 bytes for expected fulfilled amount",
+            "- 8 bytes deadline",
+            "- 1 byte offer status",
+            "- 8 bytes fee percentage",
+            "- 32 bytes fee wallet"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "maker"
+              },
+              {
+                "kind": "arg",
+                "path": "offer_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "Admin configuration for protocol verification and statistics",
+            "Must be initialized before any offers can be created"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_config",
+          "docs": [
+            "Fee configuration providing protocol fee parameters",
+            "Must be initialized before any offers can be created"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "maker_token_account",
+          "docs": [
+            "Maker's token account containing tokens to be offered",
+            "Must match the input token mint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "Vault token account created as an Associated Token Account",
+            "Will hold the offered tokens until trade completion",
+            "Authority is the offer PDA"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "offer"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "input_token_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "input_token_mint",
+          "docs": [
+            "Input token mint (token being offered)"
+          ]
+        },
+        {
+          "name": "output_token_mint",
+          "docs": [
+            "Output token mint (token being requested)"
+          ]
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "Token interface program for Token-2022 support"
+          ]
+        },
+        {
+          "name": "associated_token_program",
+          "docs": [
+            "Required for ATA initialization"
+          ],
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "offer_id",
+          "type": "u64"
+        },
+        {
+          "name": "token_amount",
+          "type": "u64"
+        },
+        {
+          "name": "expected_total_amount",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_admin",
+      "discriminator": [
+        35,
+        176,
+        8,
+        143,
+        42,
+        160,
+        61,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The admin account that will control protocol settings"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "PDA storing admin details and protocol statistics",
+            "Space breakdown:",
+            "- 8 bytes discriminator",
+            "- 32 bytes admin pubkey"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_config",
+          "docs": [
+            "PDA storing fee configuration",
+            "Space breakdown:",
+            "- 8 bytes discriminator",
+            "- 8 bytes fee percentage",
+            "- 32 bytes fee wallet address"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "whitelist_config",
+          "docs": [
+            "PDA storing whitelist enforcement configuration",
+            "Space breakdown:",
+            "- 8 bytes discriminator",
+            "- 1 byte boolean flag"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_whitelist",
+          "docs": [
+            "PDA storing whitelisted token mints",
+            "Space breakdown:",
+            "- 8 bytes discriminator",
+            "- 4 bytes vector length",
+            "- 32 * 50 bytes for pubkeys (max 50 mints)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "Global PDA for tracking maker sequences"
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_percentage",
+          "type": "u64"
+        },
+        {
+          "name": "fee_wallet",
+          "type": "pubkey"
+        },
+        {
+          "name": "require_whitelist",
+          "type": "bool"
+        },
+        {
+          "name": "initial_mints",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "manage_whitelist",
+      "discriminator": [
+        252,
+        197,
+        13,
+        121,
+        14,
+        54,
+        39,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "docs": [
+            "Original offer maker, must sign whitelist operations"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "whitelist",
+          "docs": [
+            "The whitelist PDA storing allowed takers",
+            "Created on first use with init_if_needed",
+            "Space for up to 50 taker addresses"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "maker"
+              },
+              {
+                "kind": "account",
+                "path": "offer.offer_id",
+                "account": "Offer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "offer",
+          "docs": [
+            "The offer this whitelist belongs to",
+            "Used to verify maker authority"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "takers",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "remove_mints_from_whitelist",
+      "discriminator": [
+        214,
+        232,
+        203,
+        229,
+        255,
+        239,
+        201,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "PDA verifying admin authority"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_whitelist",
+          "docs": [
+            "Mint whitelist to modify"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "remove_mints",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "take_offer",
+      "discriminator": [
+        128,
+        156,
+        242,
+        207,
+        237,
+        192,
+        103,
+        240
+      ],
+      "accounts": [
+        {
+          "name": "core",
+          "accounts": [
+            {
+              "name": "taker",
+              "docs": [
+                "Transaction signer who will take the offer.",
+                "Responsible for:",
+                "- Paying for account initialization",
+                "- Sending payment tokens",
+                "- Paying protocol fees",
+                "- Receiving offered tokens"
+              ],
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "admin_config",
+              "docs": [
+                "Protocol admin configuration.",
+                "Tracks global settings and statistics.",
+                "PDA with seeds: [\"admin_config\"]"
+              ],
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      97,
+                      100,
+                      109,
+                      105,
+                      110,
+                      95,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "offer",
+              "docs": [
+                "The offer being taken.",
+                "PDA with seeds: [\"offer\", maker_pubkey, offer_id]",
+                "Constraints:",
+                "- Must be in Ongoing status",
+                "- Closed on completion with rent returned to maker"
+              ],
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      111,
+                      102,
+                      102,
+                      101,
+                      114
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "offer.maker",
+                    "account": "Offer"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "offer.offer_id",
+                    "account": "Offer"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "maker",
+              "writable": true
+            },
+            {
+              "name": "whitelist",
+              "docs": [
+                "Whitelist of authorized takers.",
+                "PDA with seeds: [\"whitelist\", maker_pubkey, offer_id]",
+                "Constraints:",
+                "- Must include taker's public key",
+                "- Closed on offer completion"
+              ],
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      119,
+                      104,
+                      105,
+                      116,
+                      101,
+                      108,
+                      105,
+                      115,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "offer.maker",
+                    "account": "Offer"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "offer.offer_id",
+                    "account": "Offer"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "token",
+          "accounts": [
+            {
+              "name": "maker_receive_token_account",
+              "docs": [
+                "Maker's token account for receiving payment.",
+                "Automatically created as an ATA if it doesn't exist."
+              ],
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "account",
+                    "path": "maker"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "token_program"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "output_token_mint"
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    140,
+                    151,
+                    37,
+                    143,
+                    78,
+                    36,
+                    137,
+                    241,
+                    187,
+                    61,
+                    16,
+                    41,
+                    20,
+                    142,
+                    13,
+                    131,
+                    11,
+                    90,
+                    19,
+                    153,
+                    218,
+                    255,
+                    16,
+                    132,
+                    4,
+                    142,
+                    123,
+                    216,
+                    219,
+                    233,
+                    248,
+                    89
+                  ]
+                }
+              }
+            },
+            {
+              "name": "taker_payment_token_account",
+              "docs": [
+                "Taker's token account for sending payment.",
+                "Automatically created as an ATA if it doesn't exist."
+              ],
+              "writable": true
+            },
+            {
+              "name": "taker_receive_token_account",
+              "docs": [
+                "Taker's token account for receiving offered tokens.",
+                "Automatically created as an ATA if it doesn't exist."
+              ],
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "account",
+                    "path": "taker"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "token_program"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "input_token_mint"
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    140,
+                    151,
+                    37,
+                    143,
+                    78,
+                    36,
+                    137,
+                    241,
+                    187,
+                    61,
+                    16,
+                    41,
+                    20,
+                    142,
+                    13,
+                    131,
+                    11,
+                    90,
+                    19,
+                    153,
+                    218,
+                    255,
+                    16,
+                    132,
+                    4,
+                    142,
+                    123,
+                    216,
+                    219,
+                    233,
+                    248,
+                    89
+                  ]
+                }
+              }
+            },
+            {
+              "name": "fee_token_account",
+              "docs": [
+                "Protocol fee receiving account.",
+                "Constraints:",
+                "- Must match configured fee wallet",
+                "- Must use correct token mint"
+              ],
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "account",
+                    "path": "fee_wallet"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "token_program"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "output_token_mint"
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    140,
+                    151,
+                    37,
+                    143,
+                    78,
+                    36,
+                    137,
+                    241,
+                    187,
+                    61,
+                    16,
+                    41,
+                    20,
+                    142,
+                    13,
+                    131,
+                    11,
+                    90,
+                    19,
+                    153,
+                    218,
+                    255,
+                    16,
+                    132,
+                    4,
+                    142,
+                    123,
+                    216,
+                    219,
+                    233,
+                    248,
+                    89
+                  ]
+                }
+              }
+            },
+            {
+              "name": "vault_token_account",
+              "docs": [
+                "Vault holding the offered tokens.",
+                "Constraints:",
+                "- Must be owned by offer PDA",
+                "- Must match input token mint"
+              ],
+              "writable": true
+            },
+            {
+              "name": "input_token_mint",
+              "docs": [
+                "Mint of the token being offered"
+              ]
+            },
+            {
+              "name": "output_token_mint",
+              "docs": [
+                "Mint of the token being requested"
+              ]
+            },
+            {
+              "name": "token_program",
+              "docs": [
+                "Required program interfaces"
+              ]
+            },
+            {
+              "name": "associated_token_program",
+              "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+            },
+            {
+              "name": "system_program",
+              "address": "11111111111111111111111111111111"
+            },
+            {
+              "name": "fee_wallet"
+            },
+            {
+              "name": "taker",
+              "writable": true
+            },
+            {
+              "name": "maker"
+            },
+            {
+              "name": "offer"
+            }
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "input_token_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "toggle_require_whitelist",
+      "discriminator": [
+        234,
+        5,
+        149,
+        172,
+        124,
+        21,
+        127,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "PDA verifying admin authority"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "whitelist_config",
+          "docs": [
+            "Whitelist configuration to toggle"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_fee_address",
+      "discriminator": [
+        110,
+        156,
+        143,
+        17,
+        70,
+        205,
+        116,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "PDA verifying admin authority"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_config",
+          "docs": [
+            "Fee configuration to update"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_address",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "update_fee_percentage",
+      "discriminator": [
+        102,
+        119,
+        197,
+        160,
+        139,
+        102,
+        182,
+        0
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin_config",
+          "docs": [
+            "PDA verifying admin authority"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_config",
+          "docs": [
+            "Fee configuration to update"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_fee",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AdminConfig",
+      "discriminator": [
+        156,
+        10,
+        79,
+        161,
+        71,
+        9,
+        62,
+        77
+      ]
+    },
+    {
+      "name": "FeeConfig",
+      "discriminator": [
+        143,
+        52,
+        146,
+        187,
+        219,
+        123,
+        76,
+        155
+      ]
+    },
+    {
+      "name": "MintWhitelist",
+      "discriminator": [
+        21,
+        127,
+        24,
+        53,
+        117,
+        168,
+        234,
+        153
+      ]
+    },
+    {
+      "name": "Offer",
+      "discriminator": [
+        215,
+        88,
+        60,
+        71,
+        170,
+        162,
+        73,
+        229
+      ]
+    },
+    {
+      "name": "Whitelist",
+      "discriminator": [
+        204,
+        176,
+        52,
+        79,
+        146,
+        121,
+        54,
+        247
+      ]
+    },
+    {
+      "name": "WhitelistConfig",
+      "discriminator": [
+        58,
+        51,
+        12,
+        166,
+        38,
+        109,
+        18,
+        255
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AdminInitialized",
+      "discriminator": [
+        237,
+        223,
+        71,
+        11,
+        140,
+        218,
+        196,
+        171
+      ]
+    },
+    {
+      "name": "FeeUpdated",
+      "discriminator": [
+        228,
+        75,
+        43,
+        103,
+        9,
+        196,
+        182,
+        4
+      ]
+    },
+    {
+      "name": "FeeWalletUpdated",
+      "discriminator": [
+        239,
+        21,
+        163,
+        102,
+        93,
+        63,
+        3,
+        248
+      ]
+    },
+    {
+      "name": "MintsAddedToWhitelist",
+      "discriminator": [
+        217,
+        228,
+        138,
+        116,
+        179,
+        91,
+        53,
+        53
+      ]
+    },
+    {
+      "name": "MintsRemovedFromWhitelist",
+      "discriminator": [
+        103,
+        176,
+        231,
+        135,
+        82,
+        141,
+        69,
+        19
+      ]
+    },
+    {
+      "name": "OfferCancelled",
+      "discriminator": [
+        45,
+        42,
+        175,
+        214,
+        51,
+        192,
+        154,
+        9
+      ]
+    },
+    {
+      "name": "OfferCreated",
+      "discriminator": [
+        31,
+        236,
+        215,
+        144,
+        75,
+        45,
+        157,
+        87
+      ]
+    },
+    {
+      "name": "OfferTaken",
+      "discriminator": [
+        97,
+        101,
+        174,
+        50,
+        76,
+        209,
+        178,
+        148
+      ]
+    },
+    {
+      "name": "TakerUpdated",
+      "discriminator": [
+        221,
+        147,
+        234,
+        94,
+        135,
+        205,
+        91,
+        223
+      ]
+    },
+    {
+      "name": "WhitelistRequirementToggled",
+      "discriminator": [
+        167,
+        221,
+        168,
+        215,
+        11,
+        108,
+        229,
+        22
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidOfferStatus",
+      "msg": "Invalid Offer Status"
+    },
+    {
+      "code": 6001,
+      "name": "TakerNotWhitelisted",
+      "msg": "Taker not whitelisted"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidMaker",
+      "msg": "Invalid Maker"
+    },
+    {
+      "code": 6003,
+      "name": "TakerAlreadyWhitelisted",
+      "msg": "Taker already exists"
+    },
+    {
+      "code": 6004,
+      "name": "MintAlreadyWhitelisted",
+      "msg": "Token already whitelisted"
+    },
+    {
+      "code": 6005,
+      "name": "MintNotWhitelisted",
+      "msg": "Token not whitelisted"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidAdmin",
+      "msg": "Invalid Admin"
+    },
+    {
+      "code": 6007,
+      "name": "OfferExpired",
+      "msg": "Offer has expired"
+    },
+    {
+      "code": 6008,
+      "name": "InsufficientAmount",
+      "msg": "Insufficient amount available"
+    },
+    {
+      "code": 6009,
+      "name": "CannotCancelOffer",
+      "msg": "Cannot Cancel Offer"
+    },
+    {
+      "code": 6010,
+      "name": "UnauthorizedMaker",
+      "msg": "Invalid Maker"
+    },
+    {
+      "code": 6011,
+      "name": "UnauthorizedAdmin",
+      "msg": "Unauthorized admin"
+    },
+    {
+      "code": 6012,
+      "name": "OfferNotExpired",
+      "msg": "Offer has not expired yet"
+    },
+    {
+      "code": 6013,
+      "name": "TooManyMints",
+      "msg": "Maximum number of whitelisted mints reached"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidFeePercentage",
+      "msg": "Fee percentage cannot exceed 100%"
+    },
+    {
+      "code": 6015,
+      "name": "AdminNotInitialized",
+      "msg": "Admin has not been initialized"
+    },
+    {
+      "code": 6016,
+      "name": "FeeConfigNotInitialized",
+      "msg": "Fee configuration has not been initialized"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidAddress",
+      "msg": "Zero Address not allowed"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidTokenAccount",
+      "msg": "Invalid token account owner"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidTokenMint",
+      "msg": "Token mint mismatch"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidDeadline",
+      "msg": "Deadline must be in the future"
+    },
+    {
+      "code": 6021,
+      "name": "WhitelistFull",
+      "msg": "Whitelist is full"
+    },
+    {
+      "code": 6022,
+      "name": "EmptyTakersList",
+      "msg": "Takers list cannot be empty"
+    },
+    {
+      "code": 6023,
+      "name": "InvalidAmount",
+      "msg": "Token amount must be greater than 0"
+    },
+    {
+      "code": 6024,
+      "name": "SequenceOverflow",
+      "msg": "Sequence Overflow"
+    },
+    {
+      "code": 6025,
+      "name": "CalculationError",
+      "msg": "Calculation error occurred."
+    },
+    {
+      "code": 6026,
+      "name": "InvalidVaultOwner",
+      "msg": "Invalid vault owner"
+    }
+  ],
+  "types": [
+    {
+      "name": "AdminConfig",
+      "docs": [
+        "Configuration account for admin operations and offer tracking"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Admin's public key for authorization"
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AdminInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_percentage",
+            "type": "u64"
+          },
+          {
+            "name": "fee_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "require_whitelist",
+            "type": "bool"
+          },
+          {
+            "name": "initial_mints",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CancellationReason",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Expired"
+          },
+          {
+            "name": "MakerCancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeeConfig",
+      "docs": [
+        "Account structure storing fee configuration for the protocol",
+        "Controls both the fee amount and where fees are sent"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fee_percentage",
+            "docs": [
+              "The fee amount in basis points (1/100th of a percent)",
+              "e.g., 100 = 1%, 50 = 0.5%, 25 = 0.25%"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "fee_address",
+            "docs": [
+              "The public key of the account that receives protocol fees",
+              "All fees collected from trades will be sent to this address"
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeeUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_fee",
+            "type": "u64"
+          },
+          {
+            "name": "new_fee",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeeWalletUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintWhitelist",
+      "docs": [
+        "Account structure storing the whitelist of permitted token mints",
+        "This controls which tokens can be used in the protocol"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mints",
+            "docs": [
+              "Vector of public keys representing allowed token mints",
+              "Only tokens from these mints can be used in the protocol when whitelist is enabled"
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintsAddedToWhitelist",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_mints",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintsRemovedFromWhitelist",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "removed_mints",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Offer",
+      "docs": [
+        "Account structure representing a token swap offer",
+        "Stores all details about an offer including its current state and parameters"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "offer_id",
+            "docs": [
+              "Unique identifier for the offer"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "maker",
+            "docs": [
+              "The public key of the account that created this offer",
+              "Controls permissions for offer modification and cancellation"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "input_token_mint",
+            "docs": [
+              "The mint address of the token being offered",
+              "Must be a whitelisted token mint if whitelist is enabled"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_amount",
+            "docs": [
+              "The amount of tokens being offered",
+              "Decreases as partial fills occur, reaches 0 when fully filled"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "output_token_mint",
+            "docs": [
+              "The mint address of the token being offered",
+              "Must be a whitelisted token mint if whitelist is enabled"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "expected_total_amount",
+            "docs": [
+              "The total amount of payment tokens expected in return",
+              "Used to calculate the exchange rate for partial fills"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "token_amount_remaining",
+            "docs": [
+              "token amount_a remaining after each trade"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expected_fulfilled_amount",
+            "docs": [
+              "token_b fullfilled"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "docs": [
+              "Unix timestamp when this offer expires",
+              "Offer cannot be taken after this time"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Current status of the offer",
+              "Controls what operations are permitted"
+            ],
+            "type": {
+              "defined": {
+                "name": "OfferStatus"
+              }
+            }
+          },
+          {
+            "name": "fee_percentage",
+            "type": "u64"
+          },
+          {
+            "name": "fee_wallet",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OfferCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "offer_id",
+            "type": "u64"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_amount",
+            "type": "u64"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "CancellationReason"
+              }
+            }
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OfferCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "offer_id",
+            "type": "u64"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "input_token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_amount",
+            "type": "u64"
+          },
+          {
+            "name": "expected_amount",
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OfferStatus",
+      "docs": [
+        "Enum representing the possible states of an offer",
+        "Used to track the offer's lifecycle and control permitted operations"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Initialized"
+          },
+          {
+            "name": "VaultInitialized"
+          },
+          {
+            "name": "Ongoing"
+          },
+          {
+            "name": "Completed"
+          },
+          {
+            "name": "Cancelled"
+          },
+          {
+            "name": "Expired"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OfferTaken",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "offer_id",
+            "type": "u64"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "taker",
+            "type": "pubkey"
+          },
+          {
+            "name": "input_token_amount",
+            "type": "u64"
+          },
+          {
+            "name": "payment_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fee_amount",
+            "type": "u64"
+          },
+          {
+            "name": "remaining_amount",
+            "type": "u64"
+          },
+          {
+            "name": "input_token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_token_mint",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TakerUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "offer_id",
+            "type": "u64"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "takers",
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Whitelist",
+      "docs": [
+        "Account structure representing a whitelist of allowed takers for a specific offer",
+        "Controls which addresses can take (accept) a particular offer"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "maker",
+            "docs": [
+              "Maker who controls the whitelist"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "offer",
+            "docs": [
+              "The public key of the offer this whitelist is associated with",
+              "Links the whitelist to its specific offer"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "takers",
+            "docs": [
+              "Vector of public keys representing addresses allowed to take the offer",
+              "Only these addresses can execute trades against the offer when whitelist is enabled",
+              "Empty vector means no takers are currently whitelisted"
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "WhitelistConfig",
+      "docs": [
+        "Account structure controlling whether token mint whitelist is enforced",
+        "Provides global toggle for whitelist functionality"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "require_whitelist",
+            "docs": [
+              "Boolean flag indicating if whitelist checking is required",
+              "true = only whitelisted token mints can be used",
+              "false = any token mint can be used"
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WhitelistRequirementToggled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_status",
+            "type": "bool"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    }
+  ]
+}

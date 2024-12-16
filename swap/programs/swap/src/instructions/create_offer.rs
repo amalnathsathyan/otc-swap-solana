@@ -6,9 +6,28 @@ use anchor_spl::{
 use crate::state::*;
 use crate::error::*;
 
+#[event]
+pub struct OfferCreated {
+    pub offer_id: u64,
+    pub maker: Pubkey,
+    pub input_token_mint: Pubkey,
+    pub output_token_mint: Pubkey,
+    pub token_amount: u64,
+    pub expected_amount: u64,
+    pub deadline: i64,
+}
+
+#[event]
+pub struct TakerUpdated {
+    pub offer_id: u64,
+    pub maker: Pubkey,
+    pub takers: Vec<Pubkey>,
+}
+
 /// Account structure for creating offer and setting up vault in one instruction
 /// Combines offer initialization and token transfer for efficiency
 #[derive(Accounts)]
+#[instruction(offer_id:u64)]
 pub struct CreateOffer<'info> {
     /// The offer creator who will:
     /// - Pay for account initialization
@@ -17,22 +36,35 @@ pub struct CreateOffer<'info> {
     #[account(mut)]
     pub maker: Signer<'info>,
 
+    // #[account(
+    //     init_if_needed,
+    //     payer = maker,
+    //     space = 8 + 32 + 8, // discriminator + pubkey + u64
+    //     seeds = [b"maker_sequence", maker.key().as_ref()],
+    //     bump
+    // )]
+    // pub maker_sequence: Account<'info, MakerSequence>,
+
     /// The offer PDA storing all trade details
     /// Space breakdown:
     /// - 8 bytes discriminator
+    /// - 8 bytes offer id
     /// - 32 bytes maker pubkey
     /// - 32 bytes input token mint
-    /// - 32 bytes output token mint
     /// - 8 bytes token amount
+    /// - 32 bytes output token mint
     /// - 8 bytes expected amount
+    /// - 8 bytes for token amount remaining
+    /// - 8 bytes for expected fulfilled amount
     /// - 8 bytes deadline
+    /// - 1 byte offer status
+    /// - 8 bytes fee percentage
     /// - 32 bytes fee wallet
-    /// - 1 byte status enum
     #[account(
         init,
         payer = maker,
-        space = 8 + 32 + 32 + 32 + 8 + 32 + 8 + 8 + 32 + 1,
-        seeds = [b"offer", maker.key().as_ref()],
+        space = 8 + 8 + 32 + 32 + 8 + 32 + 8 + 8 + 8 + 8 + 1 + 8 + 32,
+        seeds = [b"offer", maker.key().as_ref(),&offer_id.to_le_bytes()],
         bump
     )]
     pub offer: Account<'info, Offer>,
@@ -50,7 +82,7 @@ pub struct CreateOffer<'info> {
     /// Fee configuration providing protocol fee parameters
     /// Must be initialized before any offers can be created
     #[account(
-        seeds = [b"fee_config"],
+        seeds = [b"fee"],
         bump,
         constraint = fee_config.fee_address != Pubkey::default() @ SwapError::FeeConfigNotInitialized
     )]
@@ -107,7 +139,7 @@ pub struct ManageWhitelist<'info> {
         init_if_needed,
         payer = maker,
         space = 8 + 32 + 32 + 4 + (32 * 50),
-        seeds = [b"whitelist", maker.key().as_ref()],
+        seeds = [b"whitelist", maker.key().as_ref(), &offer.offer_id.to_le_bytes()],
         bump,
         constraint = offer.maker == maker.key() @ SwapError::UnauthorizedMaker
     )]
@@ -142,8 +174,9 @@ pub struct ManageWhitelist<'info> {
 /// * `SwapError::AdminNotInitialized` - If admin config not set
 /// * `SwapError::FeeConfigNotInitialized` - If fee config not set
 /// * `SwapError::InvalidTokenAccount` - If token accounts don't match
-pub fn create_offer(
+pub fn initialize_offer(
     ctx: Context<CreateOffer>,
+    offer_id:u64,
     token_amount: u64,
     expected_amount: u64,
     deadline: i64,
@@ -153,13 +186,26 @@ pub fn create_offer(
     require!(deadline > current_time, SwapError::InvalidDeadline);
     require!(token_amount > 0, SwapError::InvalidAmount);
 
+    // let maker_sequence = &mut ctx.accounts.maker_sequence;
+    // maker_sequence.offer_count = maker_sequence.offer_count.checked_add(1)
+    //     .ok_or(SwapError::SequenceOverflow)?;
+
+    // if maker_sequence.maker == Pubkey::default() {
+    //     maker_sequence.maker = ctx.accounts.maker.key();
+    // }
+
     // Initialize offer parameters
     let offer = &mut ctx.accounts.offer;
+    offer.offer_id = offer_id;
     offer.maker = ctx.accounts.maker.key();
     offer.input_token_mint = ctx.accounts.input_token_mint.key();
     offer.output_token_mint = ctx.accounts.output_token_mint.key();
     offer.token_amount = token_amount;
     offer.expected_total_amount = expected_amount;
+    // offer.token_amount = token_amount; expected ; init as zero
+    // offer.fulfilTokenAmount = expected_amount; init as zero ; incrementing these value.
+    offer.token_amount_remaining = token_amount;
+    offer.expected_fulfilled_amount = 0;
     offer.deadline = deadline;
     
     // Copy protocol configuration
@@ -181,18 +227,24 @@ pub fn create_offer(
         ctx.accounts.input_token_mint.decimals,
     )?;
 
-    // Update protocol statistics
-    let admin_config = &mut ctx.accounts.admin_config;
-    admin_config.total_offers += 1;
-    admin_config.active_offers += 1;
 
     // Activate the offer
     offer.status = OfferStatus::Ongoing;
 
+    emit!(OfferCreated {
+        offer_id: offer.offer_id,
+        maker: offer.maker,
+        input_token_mint: offer.input_token_mint,
+        output_token_mint: offer.output_token_mint,
+        token_amount,
+        expected_amount,
+        deadline,
+    });
+
     Ok(())
 }
 
-/// Adds multiple takers to an offer's whitelist
+/// Updates multiple takers to an offer's whitelist
 /// Creates whitelist PDA if it doesn't exist
 /// 
 /// # Arguments
@@ -208,45 +260,29 @@ pub fn create_offer(
 /// * `SwapError::EmptyTakersList` - If takers list is empty
 /// * `SwapError::WhitelistFull` - If adding would exceed capacity
 /// * `SwapError::UnauthorizedMaker` - If caller isn't offer maker
-pub fn add_takers(
+pub fn manage_takers(
     ctx: Context<ManageWhitelist>,
     takers: Vec<Pubkey>,
 ) -> Result<()> {
     require!(!takers.is_empty(), SwapError::EmptyTakersList);
+    require!(takers.len() < 50, SwapError::WhitelistFull);
     
     let whitelist = &mut ctx.accounts.whitelist;
-    for taker in takers {
-        if !whitelist.takers.contains(&taker) {
-            require!(
-                whitelist.takers.len() < 50,
-                SwapError::WhitelistFull
-            );
-            whitelist.takers.push(taker);
-        }
-    }
-    Ok(())
-}
+    let maker = ctx.accounts.maker.key();
+    let offer_id = ctx.accounts.offer.offer_id;
 
-/// Removes multiple takers from an offer's whitelist
-/// 
-/// # Arguments
-/// * `ctx` - ManageWhitelist context
-/// * `takers` - Vector of taker public keys to remove
-///
-/// # Security
-/// - Only callable by offer maker
-/// - Safely handles non-existent entries
-/// - Maintains whitelist integrity
-///
-/// # Errors
-/// * `SwapError::EmptyTakersList` - If takers list is empty
-/// * `SwapError::UnauthorizedMaker` - If caller isn't offer maker
-pub fn remove_takers(
-    ctx: Context<ManageWhitelist>,
-    takers: Vec<Pubkey>,
-) -> Result<()> {
-    require!(!takers.is_empty(), SwapError::EmptyTakersList);
-    
-    ctx.accounts.whitelist.takers.retain(|taker| !takers.contains(taker));
+    // Clear the existing takers
+    whitelist.takers.clear();
+
+    for taker in takers {
+        whitelist.takers.push(taker);
+    }
+
+    emit!(TakerUpdated {
+        offer_id,
+        maker,
+        takers: whitelist.takers.clone(),
+    });
+
     Ok(())
 }

@@ -7,7 +7,7 @@ pub use instructions::*;
 pub use error::*;
 pub use state::*;
 
-declare_id!("EcDrwQMkZDvUN6f1fnHKDzgJJyTthe5ViYZbiV7zrcfC");
+declare_id!("BDurA1PZPYYD3SnhRDxnd592fCUDYWFHGGakLVbixp5S");
 
 #[program]
 pub mod swap {
@@ -59,36 +59,25 @@ pub mod swap {
         instructions::admin::update_toggle_whitelist(ctx)
     }
 
-    pub fn expire_offer(
-        ctx: Context<CheckExpiredOffer>
-    ) -> Result<()> {
-        instructions::admin::update_expire_offer(ctx)
-    }
-
     // Maker Functions
     pub fn create_offer_and_send_tokens_to_vault(
         ctx: Context<CreateOffer>,
+        offer_id:u64,
         token_amount: u64,
         expected_total_amount: u64,
         deadline: i64,
     ) -> Result<()> {
-        instructions::create_offer::create_offer(ctx, token_amount, expected_total_amount, deadline)
+        instructions::create_offer::initialize_offer(ctx, offer_id, token_amount, expected_total_amount, deadline)
     }
 
-    pub fn add_taker_whitelist(
+    pub fn manage_whitelist(
         ctx: Context<ManageWhitelist>,
         takers: Vec<Pubkey>,
     ) -> Result<()> {
-        instructions::create_offer::add_takers(ctx, takers)
+        instructions::create_offer::manage_takers(ctx, takers)
     }
 
-    pub fn remove_taker_whitelist(
-        ctx: Context<ManageWhitelist>,
-        takers: Vec<Pubkey>,
-    ) -> Result<()> {
-        instructions::create_offer::remove_takers(ctx, takers)
-    }
-
+    ///if incase, it's completed shouldn't be able to call this
     pub fn cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
         instructions::cancel_offer::update_cancel_offer(ctx)
     }
@@ -96,8 +85,8 @@ pub mod swap {
     // Taker Function
     pub fn take_offer(
         ctx: Context<TakeOffer>, 
-        token_amount: u64
+        input_token_amount: u64 //token_a
     ) -> Result<()> {
-        instructions::taker_offer::process(ctx, token_amount)
+        instructions::taker_offer::process(ctx, input_token_amount)
     }
 }

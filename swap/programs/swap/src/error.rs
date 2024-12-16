@@ -36,6 +36,8 @@ pub enum SwapError {
     AdminNotInitialized,
     #[msg("Fee configuration has not been initialized")]
     FeeConfigNotInitialized,
+    #[msg("Zero Address not allowed")]
+    InvalidAddress,
     #[msg("Invalid token account owner")]
     InvalidTokenAccount,
     #[msg("Token mint mismatch")]
@@ -48,4 +50,10 @@ pub enum SwapError {
     EmptyTakersList,
     #[msg("Token amount must be greater than 0")]
     InvalidAmount,
+    #[msg("Sequence Overflow")]
+    SequenceOverflow,
+    #[msg("Calculation error occurred.")]
+    CalculationError,
+    #[msg("Invalid vault owner")]
+    InvalidVaultOwner,
 }
